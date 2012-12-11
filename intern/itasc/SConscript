@@ -1,0 +1,13 @@
+#!/usr/bin/python
+Import ('env')
+
+sources = env.Glob('*.cpp')
+sources += env.Glob('kdl/*.cpp')
+sources += env.Glob('kdl/utilities/*.cpp')
+
+incs = '. ../../extern/Eigen3'
+
+defs = []
+
+env.BlenderLib ('bf_intern_itasc', sources, Split(incs), defs, libtype=['intern','player'], priority=[20,100] )
+
