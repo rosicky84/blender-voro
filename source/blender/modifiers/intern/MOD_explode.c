@@ -82,7 +82,6 @@ static void initData(ModifierData *md)
     
 	emd->facepa = NULL;
 	emd->flag |= eExplodeFlag_Unborn + eExplodeFlag_Alive + eExplodeFlag_Dead;
-    emd->last_frame = 0.0f;
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -127,6 +126,7 @@ static void freeData(ModifierData *md)
     {
         if (emd->facepa) MEM_freeN(emd->facepa);
     }
+    
 }
 
 #else
@@ -163,7 +163,6 @@ static void copyData(ModifierData *md, ModifierData *target)
     temd->last_part = emd->last_part;
     temd->last_bool = emd->last_bool;
     temd->last_flip = emd->last_flip;
-    temd->last_frame = emd->last_frame;
 }
 static int dependsOnTime(ModifierData *UNUSED(md)) 
 {
@@ -1141,7 +1140,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
     for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
     {
-        
         if (emd->refracture)
         {
             //current state
@@ -1168,7 +1166,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         // printf("Particle: %f, %f, %f \n", co[0], co[1], co[2]);
         
         //use particle positions to fracture the object, tell those to the voronoi container
-        container_put(container, pa->num , co[0], co[1], co[2]);
+        container_put(container, p , co[0], co[1], co[2]);
     }
     
     //TODO: write results to temp file, ensure using the systems temp dir...
@@ -1457,12 +1455,16 @@ static void createCellpa(ExplodeModifierData *emd,
     int c;
     
     totpart = psys->totpart;
+   
     
 	/* make tree of emitter locations */
 	tree = BLI_kdtree_new(totpart);
 	for (p = 0, pa = psys->particles; p < totpart; p++, pa++) {
-		psys_particle_on_emitter(psmd, psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
-		BLI_kdtree_insert(tree, p, co, NULL);
+        if (ELEM3(pa->alive, PARS_ALIVE, PARS_DYING, PARS_DEAD))
+        {
+            psys_particle_on_emitter(psmd, psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
+            BLI_kdtree_insert(tree, p, co, NULL);
+        }
 	}
 	BLI_kdtree_balance(tree);
     
@@ -1475,9 +1477,17 @@ static void createCellpa(ExplodeModifierData *emd,
         center[2] = emd->cells->data[c].centroid[2];
         
         part = BLI_kdtree_find_nearest(tree, center, NULL, NULL);
+        
+        if (part == -1)
+        {
+            emd->cells->data[c].particle_index = -1;
+            continue;
+        }
+       
         emd->cells->data[c].particle_index = part;
+        
     }
-    
+
 	BLI_kdtree_free(tree);
 }
 
@@ -1490,9 +1500,7 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
 	ParticleData *pa = NULL, *pars = psmd->psys->particles;
 	ParticleKey state, birth;
 	float imat[4][4];
-	float rot[4];// orco[3];
-	float cfra, lfra;
-	/* float timestep; */
+	float rot[4];
 	int totpart = 0;
     int i, j, p;
     
@@ -1502,8 +1510,6 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
 	sim.ob = ob;
 	sim.psys = psmd->psys;
 	sim.psmd = psmd;
-    
-	cfra = BKE_scene_frame_get(scene);
     
     if (emd->cells == NULL)
     {
@@ -1516,13 +1522,6 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
     
     //create a new mesh aka "explode" from new vertex positions. use bmesh for that now.
     
-    //Hrm, that conversion loses faces.
-    /* printf("FACES2: %d\n", dm->getNumPolys(dm));
-     BMesh* bm = DM_to_bmesh(dm);
-     BM_mesh_elem_index_ensure(bm, BM_ALL);
-     printf("FACES3: %d\n", bm->totface);*/
-    
-    
     //since we dont have real access to tessfaces we can deal with from our cells, need to recreate the edges
     //and faces now the bmesh way. Or ... simply move the verts ? and recreate the DerivedMesh.
     
@@ -1534,8 +1533,15 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
         if ((p >= 0) && (p < totpart))
         {
             pa = pars + p;
+            //if (ELEM(pa->alive, PARS_DYING, PARS_DEAD))
+            //{
+            //    continue;
+            //}
         }
-        
+        else
+        {
+            continue;
+        }
         
         for (j = 0; j < emd->cells->data[i].vertex_count; j++)
         {
@@ -1546,24 +1552,6 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
             vert->co[0] = emd->cells->data[i].vertco[j*3];
             vert->co[1] = emd->cells->data[i].vertco[j*3+1];
             vert->co[2] = emd->cells->data[i].vertco[j*3+2];
-            
-           
-            lfra = pa->prev_state.time;
-                        
-            //backwards movement, try to assemble correctly at first frame at least
-            if ((cfra < lfra) && (cfra == psmd->psys->part->sta))
-            {
-                //printf("Resetting2...\n");
-                continue;
-            }
-            
-            //reset in case of canceling the animation only, no further calculations...
-            if ((cfra < emd->last_frame) && (cfra >= lfra))
-            {
-                //printf("Resetting1...\n");
-                //emd->last_frame = cfra;
-                continue;
-            }
 
             //do recalc here ! what about uv maps and such.... ? let boolean (initially) handle this, but
             //i HOPE vertex movement will update the uvs as well... or bust
@@ -1600,8 +1588,6 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
         }
     }
     
-    emd->last_frame = cfra;
-    
     if (psmd->psys->lattice) {
         end_latt_deform(psmd->psys->lattice);
         psmd->psys->lattice = NULL;
@@ -1634,7 +1620,6 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                 (emd->use_cache == FALSE))
             {
                 emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
-                createCellpa(emd, psmd);
                 
                 emd->last_part = psmd->psys->totpart;
                 emd->last_bool = emd->use_boolean;
@@ -1665,7 +1650,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
             else
             {
                 fracMesh = emd->fracMesh; //BM_mesh_copy(emd->fracMesh); loses some faces too, hrm.
-                //createCellpa(emd, psmd);
+                
+                createCellpa(emd, psmd);
                 fracMesh = explodeCells(emd, psmd, md->scene, ob, fracMesh);
                 result = CDDM_from_bmesh(fracMesh, TRUE);
                 return result;
@@ -1679,8 +1665,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
         
         else if (emd->mode == eFractureMode_Faces)
         {
-            DM_ensure_tessface(dm); /* BMESH - UNTIL MODIFIER IS UPDATED FOR MPoly */
             ParticleSystem *psys = psmd->psys;
+            DM_ensure_tessface(dm); /* BMESH - UNTIL MODIFIER IS UPDATED FOR MPoly */
 
             if (psys == NULL || psys->totpart == 0) return derivedData;
             if (psys->part == NULL || psys->particles == NULL) return derivedData;

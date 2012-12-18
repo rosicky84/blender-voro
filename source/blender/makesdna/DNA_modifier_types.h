@@ -677,8 +677,6 @@ typedef struct ExplodeModifierData {
     int use_boolean, refracture, use_cache, flip_normal;
     int last_part, last_bool, last_flip;
     int mode;
-    float last_frame;
-    char pad[4];
     
 } ExplodeModifierData;
 
