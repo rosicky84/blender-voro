@@ -4499,6 +4499,10 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 			ExplodeModifierData *psmd = (ExplodeModifierData *)md;
 			
 			psmd->facepa = NULL;
+
+            psmd->fracMesh = NULL;
+            psmd->cells = NULL;
+            psmd->tempOb = NULL;
 		}
 		else if (md->type == eModifierType_MeshDeform) {
 			MeshDeformModifierData *mmd = (MeshDeformModifierData *)md;

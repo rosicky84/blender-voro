@@ -78,3 +78,5 @@ if(WITH_GHOST_XDND)
 		add_subdirectory(xdnd)
 	endif()
 endif()
+
+add_subdirectory(voro++)

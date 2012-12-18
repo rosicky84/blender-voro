@@ -631,12 +631,55 @@ typedef enum {
 	eExplodeFlag_Dead =			(1<<5),
 } ExplodeModifierFlag;
 
+typedef enum {
+    eFractureMode_Cells = 0,
+    eFractureMode_Faces = 1,
+} eFractureMode;
+
+enum {
+	MOD_VORONOI_USEBOOLEAN = (1 << 1),
+    MOD_VORONOI_REFRACTURE = (1 << 2),
+    MOD_VORONOI_USECACHE = (1 << 3),
+    MOD_VORONOI_FLIPNORMAL = (1 << 4)
+};
+
+typedef struct VoronoiCell {
+    struct BMVert **vertices;
+    float *vertco;
+    int vertex_count;
+    int particle_index;
+    float centroid[3];
+    char pad[4];
+} VoronoiCell;
+
+typedef struct VoronoiCells {
+    VoronoiCell *data;
+    int count;
+    char pad[4];
+} VoronoiCells;
+
+
 typedef struct ExplodeModifierData {
 	ModifierData modifier;
-	int *facepa;
+    
+    //for voronoi cell mode
+    VoronoiCells *cells;
+    struct BMesh *fracMesh;
+    struct Object *tempOb;
+    
+    //for face mode
+    int *facepa;
 	short flag, vgroup;
 	float protect;
-	char uvname[64];	/* MAX_CUSTOMDATA_LAYER_NAME */
+    char uvname[64];	/* MAX_CUSTOMDATA_LAYER_NAME */
+    
+    //for voronoi cell mode
+    int use_boolean, refracture, use_cache, flip_normal;
+    int last_part, last_bool, last_flip;
+    int mode;
+    float last_frame;
+    char pad[4];
+    
 } ExplodeModifierData;
 
 typedef struct MultiresModifierData {

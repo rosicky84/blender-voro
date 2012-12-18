@@ -2166,6 +2166,38 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
 	RNA_def_property_string_maxlength(prop, MAX_CUSTOMDATA_LAYER_NAME);
 	RNA_def_property_ui_text(prop, "Particle UV", "UV map to change with particle age");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+    
+    //for voronoi cell mode
+    static EnumPropertyItem prop_mode_items[] = {
+        {eFractureMode_Cells, "CELLS", 0, "Voronoi Cells", "Fracture to voronoi cells and move them with particles"},
+        {eFractureMode_Faces, "FACES", 0, "Mesh Faces", "Move mesh faces with particles"},
+        {0, NULL, 0, NULL, NULL}
+    };
+    prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
+    RNA_def_property_enum_items(prop, prop_mode_items);
+    RNA_def_property_ui_text(prop, "Mode", "Mode of fracture");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
+    
+    prop = RNA_def_property(srna, "use_boolean", PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(prop, NULL, "use_boolean", MOD_VORONOI_USEBOOLEAN);
+    RNA_def_property_ui_text(prop, "Use Boolean Intersection", "Intersect shards with original object shape");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
+    
+    prop = RNA_def_property(srna, "refracture", PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(prop, NULL, "refracture", MOD_VORONOI_REFRACTURE);
+    RNA_def_property_ui_text(prop, "Keep Refracturing", "Refracture the object when particles move");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
+    
+    prop = RNA_def_property(srna, "use_cache", PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(prop, NULL, "use_cache", MOD_VORONOI_USECACHE);
+    RNA_def_property_ui_text(prop, "Use Fracture Cache", "Store the fractured mesh in a cache for faster re-use");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
+    
+    prop = RNA_def_property(srna, "flip_normal", PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(prop, NULL, "flip_normal", MOD_VORONOI_FLIPNORMAL);
+    RNA_def_property_ui_text(prop, "Flip Normals", "Flip the normals when using boolean intersection, to possibly fix odd looking shapes");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
 }
 
 static void rna_def_modifier_cloth(BlenderRNA *brna)

@@ -277,25 +277,35 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         split.prop(md, "use_edge_sharp", text="Sharp Edges")
 
     def EXPLODE(self, layout, ob, md):
+        layout.prop(md, "mode")
         split = layout.split()
 
-        col = split.column()
-        col.label(text="Vertex group:")
-        col.prop_search(md, "vertex_group", ob, "vertex_groups", text="")
-        sub = col.column()
-        sub.active = bool(md.vertex_group)
-        sub.prop(md, "protect")
-        col.label(text="Particle UV")
-        col.prop_search(md, "particle_uv", ob.data, "uv_textures", text="")
+        if (md.mode == 'CELLS'):
+            col = split.column()
+            col.prop(md, "use_boolean")
+            if (md.use_boolean == True):
+                col.prop(md, "flip_normal")
+            if (md.refracture == False):
+                col.prop(md, "use_cache")
+            if (md.use_cache == False):
+                col.prop(md, "refracture")
+        elif (md.mode == 'FACES'):    
+            col = split.column()
+            col.label(text="Vertex group:")
+            col.prop_search(md, "vertex_group", ob, "vertex_groups", text="")
+            sub = col.column()
+            sub.active = bool(md.vertex_group)
+            sub.prop(md, "protect")
+            col.label(text="Particle UV")
+            col.prop_search(md, "particle_uv", ob.data, "uv_textures", text="")
 
-        col = split.column()
-        col.prop(md, "use_edge_cut")
-        col.prop(md, "show_unborn")
-        col.prop(md, "show_alive")
-        col.prop(md, "show_dead")
-        col.prop(md, "use_size")
-
-        layout.operator("object.explode_refresh", text="Refresh")
+            col = split.column()
+            col.prop(md, "use_edge_cut")
+            col.prop(md, "show_unborn")
+            col.prop(md, "show_alive")
+            col.prop(md, "show_dead")
+            col.prop(md, "use_size")
+            layout.operator("object.explode_refresh", text="Refresh")
 
     def FLUID_SIMULATION(self, layout, ob, md):
         layout.label(text="Settings can be found inside the Physics context")
@@ -772,6 +782,7 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         sub = col.column(align=True)
         sub.prop(md, "scale_x", text="Scale X")
         sub.prop(md, "scale_y", text="Scale Y")
+        
 
     def WARP(self, layout, ob, md):
         use_falloff = (md.falloff_type != 'NONE')
