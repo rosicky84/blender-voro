@@ -1222,10 +1222,8 @@ void RNA_property_enum_items_gettexted(bContext *C, PointerRNA *ptr, PropertyRNA
 
 		for (i = 0; nitem[i].identifier; i++) {
 			if (nitem[i].name) {
-				if (prop->translation_context)
-					nitem[i].name = BLF_pgettext(prop->translation_context, nitem[i].name);
-				else
-					nitem[i].name = BLF_pgettext(NULL, nitem[i].name);
+				/* note: prop->translation_context may be NULL, this just means we dont use a context */
+				nitem[i].name = BLF_pgettext(prop->translation_context, nitem[i].name);
 			}
 			if (nitem[i].description)
 				nitem[i].description = BLF_pgettext(NULL, nitem[i].description);
@@ -4168,13 +4166,119 @@ char *RNA_path_from_ID_to_property(PointerRNA *ptr, PropertyRNA *prop)
  * Get the ID as a python representation, eg:
  *   bpy.data.foo["bar"]
  */
-char *RNA_path_from_ID_python(ID *id)
+char *RNA_path_full_ID_py(ID *id)
 {
 	char id_esc[(sizeof(id->name) - 2) * 2];
 
 	BLI_strescape(id_esc, id->name + 2, sizeof(id_esc));
 
 	return BLI_sprintfN("bpy.data.%s[\"%s\"]", BKE_idcode_to_name_plural(GS(id->name)), id_esc);
+}
+
+/**
+ * Get the ID.struct as a python representation, eg:
+ *   bpy.data.foo["bar"].some_struct
+ */
+char *RNA_path_full_struct_py(struct PointerRNA *ptr)
+{
+	char *id_path;
+	char *data_path;
+
+	char *ret;
+
+	if (!ptr->id.data) {
+		return NULL;
+	}
+
+	/* never fails */
+	id_path = RNA_path_full_ID_py(ptr->id.data);
+
+	data_path = RNA_path_from_ID_to_struct(ptr);
+
+	ret = BLI_sprintfN("%s.%s",
+	                   id_path, data_path);
+
+	return ret;
+}
+
+/**
+ * Get the ID.struct.property as a python representation, eg:
+ *   bpy.data.foo["bar"].some_struct.some_prop[10]
+ */
+char *RNA_path_full_property_py(PointerRNA *ptr, PropertyRNA *prop, int index)
+{
+	char *id_path;
+	char *data_path;
+
+	char *ret;
+
+	if (!ptr->id.data) {
+		return NULL;
+	}
+
+	/* never fails */
+	id_path = RNA_path_full_ID_py(ptr->id.data);
+
+	data_path = RNA_path_from_ID_to_property(ptr, prop);
+
+	if ((index == -1) || (RNA_property_array_check(prop) == FALSE)) {
+		ret = BLI_sprintfN("%s.%s",
+		                   id_path, data_path);
+	}
+	else {
+		ret = BLI_sprintfN("%s.%s[%d]",
+		                   id_path, data_path, index);
+	}
+
+	return ret;
+}
+
+/**
+ * Get the struct.property as a python representation, eg:
+ *   some_struct.some_prop[10]
+ */
+char *RNA_path_struct_property_py(PointerRNA *ptr, PropertyRNA *prop, int index)
+{
+	char *data_path;
+
+	char *ret;
+
+	if (!ptr->id.data) {
+		return NULL;
+	}
+
+	data_path = RNA_path_from_ID_to_property(ptr, prop);
+
+	if ((index == -1) || (RNA_property_array_check(prop) == FALSE)) {
+		ret = BLI_sprintfN("%s",
+		                   data_path);
+	}
+	else {
+		ret = BLI_sprintfN("%s[%d]",
+		                   data_path, index);
+	}
+
+	return ret;
+}
+
+/**
+ * Get the struct.property as a python representation, eg:
+ *   some_prop[10]
+ */
+char *RNA_path_property_py(PointerRNA *UNUSED(ptr), PropertyRNA *prop, int index)
+{
+	char *ret;
+
+	if ((index == -1) || (RNA_property_array_check(prop) == FALSE)) {
+		ret = BLI_sprintfN("%s",
+		                   RNA_property_identifier(prop));
+	}
+	else {
+		ret = BLI_sprintfN("%s[%d]",
+		                   RNA_property_identifier(prop), index);
+	}
+
+	return ret;
 }
 
 /* Quick name based property access */
@@ -4606,7 +4710,7 @@ int RNA_property_is_idprop(PropertyRNA *prop)
 /* string representation of a property, python
  * compatible but can be used for display too,
  * context may be NULL */
-char *RNA_pointer_as_string(bContext *C, PointerRNA *ptr)
+static char *rna_pointer_as_string__idprop(bContext *C, PointerRNA *ptr)
 {
 	DynStr *dynstr = BLI_dynstr_new();
 	char *cstring;
@@ -4641,6 +4745,25 @@ char *RNA_pointer_as_string(bContext *C, PointerRNA *ptr)
 	return cstring;
 }
 
+static char *rna_pointer_as_string__bldata(PointerRNA *ptr)
+{
+	if (RNA_struct_is_ID(ptr->type)) {
+		return RNA_path_full_ID_py(ptr->id.data);
+	}
+	else {
+		return RNA_path_full_struct_py(ptr);
+	}
+}
+
+char *RNA_pointer_as_string(bContext *C, PointerRNA *ptr, PropertyRNA *prop_ptr, PointerRNA *ptr_prop)
+{
+	if (RNA_property_flag(prop_ptr) & PROP_IDPROPERTY) {
+		return rna_pointer_as_string__idprop(C, ptr_prop);
+	}
+	else {
+		return rna_pointer_as_string__bldata(ptr_prop);
+	}
+}
 
 /* context and ptr_default can be NULL */
 char *RNA_pointer_as_string_keywords_ex(bContext *C, PointerRNA *ptr, PointerRNA *ptr_default,
@@ -4892,7 +5015,7 @@ char *RNA_property_as_string(bContext *C, PointerRNA *ptr, PropertyRNA *prop, in
 		case PROP_POINTER:
 		{
 			PointerRNA tptr = RNA_property_pointer_get(ptr, prop);
-			cstring = RNA_pointer_as_string(C, &tptr);
+			cstring = RNA_pointer_as_string(C, ptr, prop, &tptr);
 			BLI_dynstr_append(dynstr, cstring);
 			MEM_freeN(cstring);
 			break;
@@ -4913,7 +5036,7 @@ char *RNA_property_as_string(bContext *C, PointerRNA *ptr, PropertyRNA *prop, in
 				first_time = 0;
 
 				/* now get every prop of the collection */
-				cstring = RNA_pointer_as_string(C, &itemptr);
+				cstring = RNA_pointer_as_string(C, ptr, prop, &itemptr);
 				BLI_dynstr_append(dynstr, cstring);
 				MEM_freeN(cstring);
 			}
