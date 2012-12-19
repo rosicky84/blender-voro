@@ -272,7 +272,7 @@ def read_opts(env, cfg, args):
         (BoolVariable('WITH_BF_REMESH', 'Build with remesh modifier', True)),
         (BoolVariable('WITH_BF_OCEANSIM', 'Build with ocean simulation', False)),
         (BoolVariable('WITH_BF_SMOKE', 'Build with smoke simulation', True)),
-        (BoolVariable('WITH_BF_VORONOI', 'Build with voronoi modifier', False)),
+        (BoolVariable('WITH_BF_VORONOI', 'Build with voronoi cells in explo modifier', True)),
         ('BF_PROFILE_FLAGS', 'Profiling compiler flags', ''),
         (BoolVariable('WITH_BF_OPENAL', 'Use OpenAL if true', False)),
         ('BF_OPENAL', 'Base path for OpenAL', ''),

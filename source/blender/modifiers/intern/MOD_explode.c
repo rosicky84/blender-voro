@@ -1076,6 +1076,23 @@ static ParticleSystemModifierData *findPrecedingParticlesystem(Object *ob, Modif
 	return psmd;
 }
 
+static int dm_minmax(DerivedMesh* dm, float min[3], float max[3])
+{
+    
+    int verts = dm->getNumVerts(dm);
+    MVert *mverts = dm->getVertArray(dm);
+	MVert *mvert;
+    int i = 0;
+    
+    INIT_MINMAX(min, max);
+	for (i = 0; i < verts; i++) {
+        mvert = &mverts[i];
+		minmax_v3v3_v3(min, max, mvert->co);
+	}
+	
+	return (verts != 0);
+}
+
 // create the voronoi cell faces inside the existing mesh
 static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSystemModifierData* psmd, ExplodeModifierData* emd)
 {
@@ -1114,18 +1131,18 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
     
     //con = voronoi.domain(xmin-theta,xmax+theta,ymin-theta,ymax+theta,zmin-theta,zmax+theta,nx,ny,nz,False, False, False, particles)
-    BoundBox* bb = BKE_mesh_boundbox_get(ob);
+    /*BoundBox* bb = BKE_mesh_boundbox_get(ob);
     
     min[0] = bb->vec[0][0]; //+ ob->loc[0];
     min[1] = bb->vec[0][1];// + ob->loc[1];
     min[2] = bb->vec[0][2];/// + ob->loc[2];
     max[0] = bb->vec[4][0];// + ob->loc[0];
     max[1] = bb->vec[3][1];// + ob->loc[1];
-    max[2] = bb->vec[1][2];// + ob->loc[2];
+    max[2] = bb->vec[1][2];// + ob->loc[2];*/
+    
+    dm_minmax(derivedData, min, max);
     
     //use global coordinates for container
-    
-    
     mul_v3_m4v3(min, ob->obmat, min);
     mul_v3_m4v3(max, ob->obmat, max);
     

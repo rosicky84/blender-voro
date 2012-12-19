@@ -193,7 +193,7 @@ option(WITH_MOD_REMESH          "Enable Remesh Modifier" ON)
 # option(WITH_MOD_CLOTH_ELTOPO    "Enable Experimental cloth solver" OFF)  # this is now only available in a branch
 # mark_as_advanced(WITH_MOD_CLOTH_ELTOPO)
 option(WITH_MOD_OCEANSIM        "Enable Ocean Modifier" OFF)
-option(WITH_MOD_VORONOI        	"Enable Voronoi Modifier" OFF)
+option(WITH_MOD_VORONOI        	"Enable Voronoi Cells in Explode Modifier" ON)
 
 # Image format support
 option(WITH_IMAGE_OPENEXR       "Enable OpenEXR Support (http://www.openexr.com)" ON)
