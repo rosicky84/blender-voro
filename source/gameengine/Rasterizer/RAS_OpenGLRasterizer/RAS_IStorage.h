@@ -4,7 +4,7 @@
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version. 
+ * of the License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -15,48 +15,48 @@
  * along with this program; if not, write to the Free Software Foundation,
  * Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  *
- * The Original Code is Copyright (C) 2010 Blender Foundation.
+ * The Original Code is Copyright (C) 2001-2002 by NaN Holding BV.
  * All rights reserved.
  *
  * The Original Code is: all of this file.
  *
- * Contributor(s): Morten Mikkelsen,
- *                 Sergey Sharybin
+ * Contributor(s): none yet.
  *
  * ***** END GPL LICENSE BLOCK *****
  */
 
-/** \file RE_multires_bake.h
- *  \ingroup render
- */
+#ifndef __KX_STORAGE
+#define __KX_STORAGE
 
-#ifndef __RE_MULTIRES_BAKE_H__
-#define __RE_MULTIRES_BAKE_H__
+#include "RAS_MaterialBucket.h"
 
-struct MultiresBakeRender;
+enum RAS_STORAGE_TYPE	{
+	RAS_AUTO_STORAGE,
+	RAS_IMMEDIATE,
+	RAS_VA,
+	RAS_VBO
+};
 
-typedef struct MultiresBakeRender {
-	DerivedMesh *lores_dm, *hires_dm;
-	int simple, lvl, tot_lvl, bake_filter;
-	short mode, use_lores_mesh;
+class RAS_IStorage
+{
 
-	int number_of_rays;
-	float bias;
+public:
+	virtual ~RAS_IStorage() {};
 
-	int tot_obj, tot_image;
-	ListBase image;
+	virtual bool	Init()=0;
+	virtual void	Exit()=0;
 
-	int baked_objects, baked_faces;
+	virtual void	IndexPrimitives(RAS_MeshSlot& ms)=0;
+	virtual void	IndexPrimitivesMulti(class RAS_MeshSlot& ms)=0;
 
-	int raytrace_structure;
-	int octree_resolution;
-	int threads;
-	
-	short *stop;
-	short *do_update;
-	float *progress;
-} MultiresBakeRender;
+	virtual void	SetDrawingMode(int drawingmode)=0;
 
-void RE_multires_bake_images(struct MultiresBakeRender *bkr);
 
+#ifdef WITH_CXX_GUARDEDALLOC
+public:
+	void *operator new(size_t num_bytes) { return MEM_mallocN(num_bytes, "GE:RAS_IStorage"); }
+	void operator delete( void *mem ) { MEM_freeN(mem); }
 #endif
+};
+
+#endif //__KX_STORAGE
