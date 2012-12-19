@@ -81,6 +81,7 @@ static void initData(ModifierData *md)
     emd->last_flip = FALSE;
     
 	emd->facepa = NULL;
+    emd->emit_continuously = FALSE;
 	emd->flag |= eExplodeFlag_Unborn + eExplodeFlag_Alive + eExplodeFlag_Dead;
 }
 
@@ -163,6 +164,7 @@ static void copyData(ModifierData *md, ModifierData *target)
     temd->last_part = emd->last_part;
     temd->last_bool = emd->last_bool;
     temd->last_flip = emd->last_flip;
+    temd->emit_continuously = emd->emit_continuously;
 }
 static int dependsOnTime(ModifierData *UNUSED(md)) 
 {
@@ -1078,6 +1080,7 @@ static ParticleSystemModifierData *findPrecedingParticlesystem(Object *ob, Modif
 static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSystemModifierData* psmd, ExplodeModifierData* emd)
 {
     void* container = NULL;
+    void* particle_order = NULL;
     float min[3], max[3];
     int p = 0;
     ParticleData *pa = NULL;
@@ -1130,6 +1133,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     // printf("Container: %f;%f;%f;%f;%f;%f \n", min[0], max[0], min[1], max[1], min[2], max[2]);
     //TODO: maybe support simple shapes without boolean, but eh...
     container = container_new(min[0], max[0], min[1], max[1], min[2], max[2], 12, 12, 12, FALSE, FALSE, FALSE, psmd->psys->totpart);
+    particle_order = particle_order_new();
+    
     
     
     sim.scene = emd->modifier.scene;
@@ -1166,7 +1171,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         // printf("Particle: %f, %f, %f \n", co[0], co[1], co[2]);
         
         //use particle positions to fracture the object, tell those to the voronoi container
-        container_put(container, p , co[0], co[1], co[2]);
+        container_put(container, particle_order, p, co[0], co[1], co[2]);
     }
     
     //TODO: write results to temp file, ensure using the systems temp dir...
@@ -1216,6 +1221,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         emd->cells->data[emd->cells->count].vertices = malloc(sizeof(BMVert*));// (float*)malloc(3 * sizeof(float));
         emd->cells->data[emd->cells->count].vertco = malloc(sizeof(float));
         emd->cells->data[emd->cells->count].vertex_count = 0;
+        emd->cells->data[emd->cells->count].particle_index = -1;
         
         bmtemp = BM_mesh_create(&bm_mesh_chunksize_default);
         tempvert = malloc(sizeof(BMVert*));
@@ -1483,9 +1489,11 @@ static void createCellpa(ExplodeModifierData *emd,
             emd->cells->data[c].particle_index = -1;
             continue;
         }
-       
-        emd->cells->data[c].particle_index = part;
         
+        if ((emd->cells->data[c].particle_index == -1) || (emd->emit_continuously))
+        {
+            emd->cells->data[c].particle_index = part;
+        }
     }
 
 	BLI_kdtree_free(tree);
@@ -1533,10 +1541,10 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
         if ((p >= 0) && (p < totpart))
         {
             pa = pars + p;
-            //if (ELEM(pa->alive, PARS_DYING, PARS_DEAD))
-            //{
-            //    continue;
-            //}
+            /*if (pa->alive == PARS_DEAD)
+            {
+                emd->cells->data[i].particle_index = -1;
+            }*/
         }
         else
         {

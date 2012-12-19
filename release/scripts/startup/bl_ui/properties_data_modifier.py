@@ -289,6 +289,7 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
                 col.prop(md, "use_cache")
             if (md.use_cache == False):
                 col.prop(md, "refracture")
+            col.prop(md, "emit_continuously")
         elif (md.mode == 'FACES'):    
             col = split.column()
             col.label(text="Vertex group:")

@@ -640,7 +640,8 @@ enum {
 	MOD_VORONOI_USEBOOLEAN = (1 << 1),
     MOD_VORONOI_REFRACTURE = (1 << 2),
     MOD_VORONOI_USECACHE = (1 << 3),
-    MOD_VORONOI_FLIPNORMAL = (1 << 4)
+    MOD_VORONOI_FLIPNORMAL = (1 << 4),
+    MOD_VORONOI_EMITCONTINUOUSLY = (1 << 5)
 };
 
 typedef struct VoronoiCell {
@@ -675,8 +676,9 @@ typedef struct ExplodeModifierData {
     
     //for voronoi cell mode
     int use_boolean, refracture, use_cache, flip_normal;
-    int last_part, last_bool, last_flip;
+    int last_part, last_bool, last_flip, emit_continuously;
     int mode;
+    char pad[4];
     
 } ExplodeModifierData;
 

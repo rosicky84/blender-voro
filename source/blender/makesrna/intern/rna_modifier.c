@@ -2197,6 +2197,11 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
     RNA_def_property_boolean_sdna(prop, NULL, "flip_normal", MOD_VORONOI_FLIPNORMAL);
     RNA_def_property_ui_text(prop, "Flip Normals", "Flip the normals when using boolean intersection, to possibly fix odd looking shapes");
     RNA_def_property_update(prop, 0, "rna_Modifier_update");
+    
+    prop = RNA_def_property(srna, "emit_continuously", PROP_BOOLEAN, PROP_NONE);
+    RNA_def_property_boolean_sdna(prop, NULL, "emit_continuously", MOD_VORONOI_EMITCONTINUOUSLY);
+    RNA_def_property_ui_text(prop, "Emit Continuously", "Keep re-emitting the voronoi cells until all particles are dead");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
 }
 
