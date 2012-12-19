@@ -678,7 +678,8 @@ typedef struct ExplodeModifierData {
     //for voronoi cell mode
     int use_boolean, refracture, use_cache, flip_normal;
     int last_part, last_bool, last_flip, emit_continuously;
-    int mode, map_delay;
+    int mode, map_delay, last_map_delay;
+	char pad[4];
     
 } ExplodeModifierData;
 

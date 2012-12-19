@@ -85,6 +85,7 @@ static void initData(ModifierData *md)
 	emd->flag |= eExplodeFlag_Unborn + eExplodeFlag_Alive + eExplodeFlag_Dead;
 	emd->patree = NULL;
 	emd->map_delay = 1;
+	emd->last_map_delay = 1;
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -173,6 +174,7 @@ static void copyData(ModifierData *md, ModifierData *target)
     temd->last_flip = emd->last_flip;
     temd->emit_continuously = emd->emit_continuously;
 	temd->map_delay = emd->map_delay;
+	temd->last_map_delay = emd->last_map_delay;
 }
 static int dependsOnTime(ModifierData *UNUSED(md)) 
 {
@@ -1658,6 +1660,16 @@ static void explodeCells(ExplodeModifierData *emd,
     //return bm;
 }
 
+static void resetCells(ExplodeModifierData *emd)
+{
+	int c;
+	
+	for (c = 0; c < emd->cells->count; c++)
+	{
+		emd->cells->data[c].particle_index = -1;
+	}
+}
+
 static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                                   DerivedMesh *derivedData,
                                   ModifierApplyFlag UNUSED(flag))
@@ -1712,6 +1724,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
             else
             {
 				//BM_mesh_copy(emd->fracMesh); loses some faces too, hrm.
+				if (emd->map_delay != emd->last_map_delay) resetCells(emd);
+				emd->last_map_delay = emd->map_delay;
 				createParticleTree(emd, psmd, md->scene, ob);
                 mapCellsToParticles(emd, psmd, md->scene);
                 explodeCells(emd, psmd, md->scene, ob);
