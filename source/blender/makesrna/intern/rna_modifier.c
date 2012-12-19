@@ -2202,6 +2202,11 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
     RNA_def_property_boolean_sdna(prop, NULL, "emit_continuously", MOD_VORONOI_EMITCONTINUOUSLY);
     RNA_def_property_ui_text(prop, "Emit Continuously", "Keep re-emitting the voronoi cells until all particles are dead");
     RNA_def_property_update(prop, 0, "rna_Modifier_update");
+	
+	prop = RNA_def_property(srna, "map_delay", PROP_INT, PROP_NONE);
+	RNA_def_property_range(prop, 0, 1000); //TODO: get correct psys end value here ?
+	RNA_def_property_ui_text(prop, "Map Delay", "Delay in frames after which the object is broken up intially ");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
 }
 

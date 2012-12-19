@@ -83,6 +83,8 @@ static void initData(ModifierData *md)
 	emd->facepa = NULL;
     emd->emit_continuously = FALSE;
 	emd->flag |= eExplodeFlag_Unborn + eExplodeFlag_Alive + eExplodeFlag_Dead;
+	emd->patree = NULL;
+	emd->map_delay = 1;
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -127,7 +129,12 @@ static void freeData(ModifierData *md)
     {
         if (emd->facepa) MEM_freeN(emd->facepa);
     }
-    
+	
+	if (emd->patree)
+	{
+		BLI_kdtree_free(emd->patree);
+		emd->patree = NULL;
+	}
 }
 
 #else
@@ -165,6 +172,7 @@ static void copyData(ModifierData *md, ModifierData *target)
     temd->last_bool = emd->last_bool;
     temd->last_flip = emd->last_flip;
     temd->emit_continuously = emd->emit_continuously;
+	temd->map_delay = emd->map_delay;
 }
 static int dependsOnTime(ModifierData *UNUSED(md)) 
 {
@@ -1465,31 +1473,55 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     return bm;
 }
 
-static void createCellpa(ExplodeModifierData *emd,
-                         ParticleSystemModifierData *psmd)
+static void createParticleTree(ExplodeModifierData *emd, ParticleSystemModifierData *psmd, Scene* scene, Object* ob)
 {
+	ParticleSimulationData sim = {NULL};
 	ParticleSystem *psys = psmd->psys;
 	ParticleData *pa;
-	KDTree *tree;
-	float center[3], co[3];
-	int p = 0, totpart = 0, part = 0;
-    int c;
-    
-    totpart = psys->totpart;
-   
-    
+	ParticleKey birth;
+	int p = 0, totpart = 0;
+	
+	totpart = psys->totpart;
+	sim.scene = scene;
+	sim.ob = ob;
+	sim.psys = psmd->psys;
+	sim.psmd = psmd;
+
 	/* make tree of emitter locations */
-	tree = BLI_kdtree_new(totpart);
-	for (p = 0, pa = psys->particles; p < totpart; p++, pa++) {
-        if (ELEM3(pa->alive, PARS_ALIVE, PARS_DYING, PARS_DEAD))
-        {
-            psys_particle_on_emitter(psmd, psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
-            BLI_kdtree_insert(tree, p, co, NULL);
-        }
+	if (emd->patree)
+	{
+		BLI_kdtree_free(emd->patree);
+		emd->patree = NULL;
 	}
-	BLI_kdtree_balance(tree);
-    
+	
+	emd->patree = BLI_kdtree_new(totpart);
+	for (p = 0, pa = psys->particles; p < totpart; p++, pa++)
+	{
+		if (emd->emit_continuously)
+		{
+			psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
+			BLI_kdtree_insert(emd->patree, p, birth.co, NULL);
+		}
+		else if (ELEM3(pa->alive, PARS_ALIVE, PARS_DYING, PARS_DEAD))
+		{
+			//psys_particle_on_emitter(psmd, psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
+			psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
+			BLI_kdtree_insert(emd->patree, p, birth.co, NULL);
+		}
+	}
+	
+	BLI_kdtree_balance(emd->patree);
+}
+
+
+static void mapCellsToParticles(ExplodeModifierData *emd, ParticleSystemModifierData *psmd, Scene* scene)
+{
+	ParticleSystem *psys = psmd->psys;
+	float center[3];
+	int p = 0, c; 
     // if voronoi: need to set centroids of cells to nearest particle, apply same(?) matrix to a group of verts
+	float cfra;
+	cfra = BKE_scene_frame_get(scene);
     
     for(c = 0; c < emd->cells->count; c++)
     {
@@ -1497,28 +1529,39 @@ static void createCellpa(ExplodeModifierData *emd,
         center[1] = emd->cells->data[c].centroid[1];
         center[2] = emd->cells->data[c].centroid[2];
         
-        part = BLI_kdtree_find_nearest(tree, center, NULL, NULL);
+        p = BLI_kdtree_find_nearest(emd->patree, center, NULL, NULL);
         
-        if (part == -1)
+      /*  if (p == -1)
         {
             emd->cells->data[c].particle_index = -1;
             continue;
-        }
+        }*/
         
-        if ((emd->cells->data[c].particle_index == -1) || (emd->emit_continuously))
+		if (emd->emit_continuously)
+		{
+			if (ELEM3(psys->particles[p].alive, PARS_ALIVE, PARS_DYING, PARS_DEAD))
+			{
+				emd->cells->data[c].particle_index = p;
+			}
+			else
+			{
+				emd->cells->data[c].particle_index = -1;
+			}
+		}
+        else
         {
-            emd->cells->data[c].particle_index = part;
-        }
+			if ((emd->cells->data[c].particle_index == -1) && (cfra > (psys->part->sta + emd->map_delay)))
+			{
+				//map once, with delay, the larger the delay, the more smaller chunks !
+				emd->cells->data[c].particle_index = p;
+			}
+		}
     }
-
-	BLI_kdtree_free(tree);
 }
 
-static BMesh *explodeCells(ExplodeModifierData *emd,
-                           ParticleSystemModifierData *psmd, Scene *scene, Object *ob,
-                           BMesh *to_explode)
+static void explodeCells(ExplodeModifierData *emd,
+                           ParticleSystemModifierData *psmd, Scene *scene, Object *ob)
 {
-    BMesh* bm = to_explode;
 	ParticleSimulationData sim = {NULL};
 	ParticleData *pa = NULL, *pars = psmd->psys->particles;
 	ParticleKey state, birth;
@@ -1536,7 +1579,7 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
     
     if (emd->cells == NULL)
     {
-        return bm;
+        return;
     }
     
     /* getting back to object space */ // do i need this ?
@@ -1556,15 +1599,7 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
         if ((p >= 0) && (p < totpart))
         {
             pa = pars + p;
-            /*if (pa->alive == PARS_DEAD)
-            {
-                emd->cells->data[i].particle_index = -1;
-            }*/
-        }
-        else
-        {
-            continue;
-        }
+		}
         
         for (j = 0; j < emd->cells->data[i].vertex_count; j++)
         {
@@ -1575,13 +1610,17 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
             vert->co[0] = emd->cells->data[i].vertco[j*3];
             vert->co[1] = emd->cells->data[i].vertco[j*3+1];
             vert->co[2] = emd->cells->data[i].vertco[j*3+2];
-
+			
+			if ((p < 0) || (p > totpart-1))
+			{
+				continue;
+			}
             //do recalc here ! what about uv maps and such.... ? let boolean (initially) handle this, but
             //i HOPE vertex movement will update the uvs as well... or bust
             
             //particle CACHE causes lots of problems with this kind of calculation.
             psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
-            //psys_particle_on_emitter(psmd, psmd->psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
+           // psys_particle_on_emitter(psmd, psmd->psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
             
             //birth.time = cfra;
             //psys_get_particle_state(&sim, p, &birth, 1);
@@ -1616,7 +1655,7 @@ static BMesh *explodeCells(ExplodeModifierData *emd,
         psmd->psys->lattice = NULL;
     }
     
-    return bm;
+    //return bm;
 }
 
 static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
@@ -1643,7 +1682,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                 (emd->use_cache == FALSE))
             {
                 emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
-                
+			
                 emd->last_part = psmd->psys->totpart;
                 emd->last_bool = emd->use_boolean;
                 emd->last_flip = emd->flip_normal;
@@ -1672,11 +1711,11 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
             }
             else
             {
-                fracMesh = emd->fracMesh; //BM_mesh_copy(emd->fracMesh); loses some faces too, hrm.
-                
-                createCellpa(emd, psmd);
-                fracMesh = explodeCells(emd, psmd, md->scene, ob, fracMesh);
-                result = CDDM_from_bmesh(fracMesh, TRUE);
+				//BM_mesh_copy(emd->fracMesh); loses some faces too, hrm.
+				createParticleTree(emd, psmd, md->scene, ob);
+                mapCellsToParticles(emd, psmd, md->scene);
+                explodeCells(emd, psmd, md->scene, ob);
+                result = CDDM_from_bmesh(emd->fracMesh, TRUE);
                 return result;
             }
 #else

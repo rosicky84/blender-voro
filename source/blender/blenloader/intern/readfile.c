@@ -4503,6 +4503,7 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
             psmd->fracMesh = NULL;
             psmd->cells = NULL;
             psmd->tempOb = NULL;
+			psmd->patree = NULL;
 		}
 		else if (md->type == eModifierType_MeshDeform) {
 			MeshDeformModifierData *mmd = (MeshDeformModifierData *)md;
