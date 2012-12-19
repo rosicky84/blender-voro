@@ -1128,7 +1128,14 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     const char *file;
     char *path, *fullpath;
     float imat[4][4];
+    float theta = 0.0f;
     
+    
+    if (emd->use_boolean)
+    {
+        //make container bigger for boolean case,so cube and container dont have equal size which can lead to boolean errors
+        theta = 0.5f;
+    }
     
     //con = voronoi.domain(xmin-theta,xmax+theta,ymin-theta,ymax+theta,zmin-theta,zmax+theta,nx,ny,nz,False, False, False, particles)
     dm_minmax(derivedData, min, max);
@@ -1140,7 +1147,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
     // printf("Container: %f;%f;%f;%f;%f;%f \n", min[0], max[0], min[1], max[1], min[2], max[2]);
     //TODO: maybe support simple shapes without boolean, but eh...
-    container = container_new(min[0], max[0], min[1], max[1], min[2], max[2], 12, 12, 12, FALSE, FALSE, FALSE, psmd->psys->totpart);
+    container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
+                              12, 12, 12, FALSE, FALSE, FALSE, psmd->psys->totpart);
     particle_order = particle_order_new();
     
     
