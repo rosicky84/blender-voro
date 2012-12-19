@@ -1131,15 +1131,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
     
     //con = voronoi.domain(xmin-theta,xmax+theta,ymin-theta,ymax+theta,zmin-theta,zmax+theta,nx,ny,nz,False, False, False, particles)
-    /*BoundBox* bb = BKE_mesh_boundbox_get(ob);
-    
-    min[0] = bb->vec[0][0]; //+ ob->loc[0];
-    min[1] = bb->vec[0][1];// + ob->loc[1];
-    min[2] = bb->vec[0][2];/// + ob->loc[2];
-    max[0] = bb->vec[4][0];// + ob->loc[0];
-    max[1] = bb->vec[3][1];// + ob->loc[1];
-    max[2] = bb->vec[1][2];// + ob->loc[2];*/
-    
     dm_minmax(derivedData, min, max);
     
     //use global coordinates for container
@@ -1151,7 +1142,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     //TODO: maybe support simple shapes without boolean, but eh...
     container = container_new(min[0], max[0], min[1], max[1], min[2], max[2], 12, 12, 12, FALSE, FALSE, FALSE, psmd->psys->totpart);
     particle_order = particle_order_new();
-    
     
     
     sim.scene = emd->modifier.scene;
