@@ -2120,6 +2120,12 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
 {
 	StructRNA *srna;
 	PropertyRNA *prop;
+	
+    static EnumPropertyItem prop_mode_items[] = {
+        {eFractureMode_Cells, "CELLS", 0, "Voronoi Cells", "Fracture to voronoi cells and move them with particles"},
+        {eFractureMode_Faces, "FACES", 0, "Mesh Faces", "Move mesh faces with particles"},
+        {0, NULL, 0, NULL, NULL}
+    };
 
 	srna = RNA_def_struct(brna, "ExplodeModifier", "Modifier");
 	RNA_def_struct_ui_text(srna, "Explode Modifier", "Explosion effect modifier based on a particle system");
@@ -2167,12 +2173,6 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "Particle UV", "UV map to change with particle age");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
     
-    //for voronoi cell mode
-    static EnumPropertyItem prop_mode_items[] = {
-        {eFractureMode_Cells, "CELLS", 0, "Voronoi Cells", "Fracture to voronoi cells and move them with particles"},
-        {eFractureMode_Faces, "FACES", 0, "Mesh Faces", "Move mesh faces with particles"},
-        {0, NULL, 0, NULL, NULL}
-    };
     prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
     RNA_def_property_enum_items(prop, prop_mode_items);
     RNA_def_property_ui_text(prop, "Mode", "Mode of fracture");
