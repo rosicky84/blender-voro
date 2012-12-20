@@ -1143,12 +1143,21 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
     if (emd->use_boolean)
     {
+		theta = -0.01f;
         //make container bigger for boolean case,so cube and container dont have equal size which can lead to boolean errors
-        theta = 0.5f;
-    }
-    
-    //con = voronoi.domain(xmin-theta,xmax+theta,ymin-theta,ymax+theta,zmin-theta,zmax+theta,nx,ny,nz,False, False, False, particles)
-    dm_minmax(derivedData, min, max);
+		if (emd->flip_normal)
+		{	//cubes usually need flip_normal, so enable theta only here, otherwise it will be subtracted
+			theta = 0.01f;
+		}
+		
+		INIT_MINMAX(min, max);
+		BKE_mesh_minmax(ob->data, min, max);
+	}
+    else
+	{
+		//con = voronoi.domain(xmin-theta,xmax+theta,ymin-theta,ymax+theta,zmin-theta,zmax+theta,nx,ny,nz,False, False, False, particles)
+		dm_minmax(derivedData, min, max);
+	}
     
     //use global coordinates for container
     mul_v3_m4v3(min, ob->obmat, min);
