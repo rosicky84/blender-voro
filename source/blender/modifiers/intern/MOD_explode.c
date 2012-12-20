@@ -1622,7 +1622,7 @@ static void explodeCells(ExplodeModifierData *emd,
             vert->co[1] = emd->cells->data[i].vertco[j*3+1];
             vert->co[2] = emd->cells->data[i].vertco[j*3+2];
 			
-			if ((p < 0) || (p > totpart-1))
+			if ((p < 0) || (p > totpart-1) || ((!emd->emit_continuously) && (pa->alive == PARS_UNBORN)))
 			{
 				continue;
 			}
