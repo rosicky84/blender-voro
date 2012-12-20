@@ -1139,11 +1139,12 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     char *path, *fullpath;
     float imat[4][4];
     float theta = 0.0f;
+	int n_size = 8;
     
     
     if (emd->use_boolean)
     {
-		theta = -0.01f;
+		//theta = -0.01f;
         //make container bigger for boolean case,so cube and container dont have equal size which can lead to boolean errors
 		if (emd->flip_normal)
 		{	//cubes usually need flip_normal, so enable theta only here, otherwise it will be subtracted
@@ -1167,8 +1168,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     // printf("Container: %f;%f;%f;%f;%f;%f \n", min[0], max[0], min[1], max[1], min[2], max[2]);
     //TODO: maybe support simple shapes without boolean, but eh...
     container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
-                              12, 12, 12, FALSE, FALSE, FALSE, psmd->psys->totpart);
-    particle_order = particle_order_new();
+                              n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart);
+   // particle_order = particle_order_new();
     
     
     sim.scene = emd->modifier.scene;
@@ -1227,7 +1228,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     // f  the face -> centroid section delimiter
     // %C the centroid of the voronoi cell, used to find nearest particle in createCellpa
     
-    //%q the particle coordinates
+    //%i the particle index
     container_print_custom(container, "%P v %t f %C", fp);
     fflush(fp);
     rewind(fp);
@@ -1459,7 +1460,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         fscanf(fp, " %f %f %f", &emd->cells->data[emd->cells->count].centroid[0],
                &emd->cells->data[emd->cells->count].centroid[1],
                &emd->cells->data[emd->cells->count].centroid[2]);
-        
+		
         //skip newline
         if (feof(fp) == 0)
         {
@@ -1688,7 +1689,6 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	ParticleSystemModifierData *psmd = findPrecedingParticlesystem(ob, md);
     
     DerivedMesh *result = NULL;
-    BMesh *fracMesh = NULL;
     
     if (psmd)
     {
@@ -1703,6 +1703,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                 (emd->use_cache == FALSE))
             {
                 emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
+				
+				printf("%d cells missing\n", psmd->psys->totpart - emd->cells->count);
 			
                 emd->last_part = psmd->psys->totpart;
                 emd->last_bool = emd->use_boolean;
