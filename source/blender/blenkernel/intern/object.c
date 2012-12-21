@@ -1839,7 +1839,10 @@ static void ob_parbone(Object *ob, Object *par, float mat[4][4])
 	}
 
 	/* get bone transform */
-	copy_m4_m4(mat, pchan->pose_mat);
+	if (pchan->bone->flag & BONE_RELATIVE_PARENTING)
+		copy_m4_m4(mat, pchan->chan_mat);
+	else
+		copy_m4_m4(mat, pchan->pose_mat);
 
 	/* but for backwards compatibility, the child has to move to the tail */
 	copy_v3_v3(vec, mat[1]);
@@ -1922,7 +1925,7 @@ static void give_parvert(Object *par, int nr, float vec[3])
 	}
 	else if (ELEM(par->type, OB_CURVE, OB_SURF)) {
 		Curve *cu       = par->data;
-		ListBase *nurb  = BKE_curve_nurbs_get(cu);;
+		ListBase *nurb  = BKE_curve_nurbs_get(cu);
 
 		BKE_nurbList_index_get_co(nurb, nr, vec);
 	}
