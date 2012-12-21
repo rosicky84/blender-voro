@@ -285,6 +285,7 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
             col.prop(md, "use_boolean")
             if (md.use_boolean == True):
                 col.prop(md, "flip_normal")
+                col.prop(md, "inner_material")
             if (md.refracture == False):
                 col.prop(md, "use_cache")
             if (md.use_cache == False):

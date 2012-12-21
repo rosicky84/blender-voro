@@ -62,6 +62,8 @@
 #include "bmesh.h"
 #include "BLI_path_util.h"
 #include <ctype.h>
+#include "DNA_material_types.h"
+#include "BKE_material.h"
 
 static void initData(ModifierData *md)
 {
@@ -86,6 +88,7 @@ static void initData(ModifierData *md)
 	emd->patree = NULL;
 	emd->map_delay = 1;
 	emd->last_map_delay = 1;
+	emd->inner_material = NULL;
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -136,6 +139,11 @@ static void freeData(ModifierData *md)
 		BLI_kdtree_free(emd->patree);
 		emd->patree = NULL;
 	}
+	
+	if (emd->inner_material)
+	{
+		emd->inner_material = NULL;
+	}
 }
 
 #else
@@ -175,6 +183,7 @@ static void copyData(ModifierData *md, ModifierData *target)
     temd->emit_continuously = emd->emit_continuously;
 	temd->map_delay = emd->map_delay;
 	temd->last_map_delay = emd->last_map_delay;
+	temd->inner_material = emd->inner_material;
 }
 static int dependsOnTime(ModifierData *UNUSED(md)) 
 {
@@ -1347,15 +1356,19 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                 {
                     //Intersection, use elements from temporary per-cell bmeshes and write to global bmesh, which
                     //is passed around and whose vertices are manipulated directly.
+					int mat_index = 0;
                     dm = CDDM_from_bmesh(bmtemp, TRUE);
                     BM_mesh_free(bmtemp);
-                    
-                    DM_ensure_tessface(derivedData);
-                    DM_ensure_tessface(dm);
-                    
-                    CDDM_calc_edges_tessface(dm);
-                    CDDM_tessfaces_to_faces(dm);
-                    CDDM_calc_normals(dm);
+					
+					DM_ensure_tessface(derivedData);
+					CDDM_calc_edges_tessface(derivedData);
+					CDDM_tessfaces_to_faces(derivedData);
+					CDDM_calc_normals(derivedData);
+					
+					DM_ensure_tessface(dm);
+					CDDM_calc_edges_tessface(dm);
+					CDDM_tessfaces_to_faces(dm);
+					CDDM_calc_normals(dm);
                     
                     if (emd->use_boolean)
                     {
@@ -1364,23 +1377,34 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                         if (!emd->tempOb)
                         {
                             emd->tempOb = BKE_object_add_only_object(OB_MESH, "Intersect");
+							//emd->tempOb = BKE_object_add(emd->modifier.scene, OB_MESH);
                         }
                         
                         if (!emd->tempOb->data)
                         {
                             emd->tempOb->data = BKE_object_obdata_add_from_type(OB_MESH);
+							//object_add_material_slot(emd->tempOb);
                         }
                         
                         
-                        DM_to_mesh(dm, emd->tempOb->data, emd->tempOb);
-                        
+						//assign inner material to temp Object
+						if (emd->inner_material)
+						{
+							//assign inner material as secondary mat to ob if not there already
+							mat_index = find_material_index(ob, emd->inner_material);
+							if (mat_index == 0)
+							{
+								object_add_material_slot(ob);
+								assign_material(ob, emd->inner_material, ob->totcol, BKE_MAT_ASSIGN_OBDATA);
+							}
+							
+							//shard gets inner material, maybe assign to all faces as well (in case this does not happen automatically
+							assign_material(emd->tempOb, emd->inner_material, 1, BKE_MAT_ASSIGN_OBDATA);
+						}
+						
+						DM_to_mesh(dm, emd->tempOb->data, emd->tempOb);
                         copy_m4_m4(emd->tempOb->obmat, ob->obmat);
-                        
-                        /*  float scale = 1.05f;
-                         ob->size[0] = scale;
-                         ob->size[1] = scale;
-                         ob->size[2] = scale;*/
-                        
+						
                         boolresult = NewBooleanDerivedMesh(dm, emd->tempOb, derivedData, ob, eBooleanModifierOp_Intersect);
                         
                     }
@@ -1389,7 +1413,12 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                         boolresult = dm;
                     }
                     
-                    if (!boolresult) break;
+					//if boolean fails, return original mesh, emit a warning
+                    if (!boolresult)
+					{
+						boolresult = dm;
+						printf("Boolean Operation failed, using original mesh !\n");
+					}
                     totvert = boolresult->getNumVerts(boolresult);
                     totedge = boolresult->getNumEdges(boolresult);
                     totface = boolresult->getNumTessFaces(boolresult);
@@ -1434,11 +1463,13 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                     {
                         if ((fa[f].v4 > 0) && (fa[f].v4 < totvert))
                         {   //create quad
-                            BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], localverts[fa[f].v4], NULL, 0);
+                            face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], localverts[fa[f].v4], NULL, 0);
+							face->mat_nr = fa[f].mat_nr;
                         }
                         else
                         {   //triangle only
-                            BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], NULL, NULL, 0);
+                            face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], NULL, NULL, 0);
+							face->mat_nr = fa[f].mat_nr;
                         }
                     }
                     
@@ -1791,6 +1822,14 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	return derivedData;
 }
 
+static void foreachIDLink(ModifierData *md, Object *ob,
+                          IDWalkFunc walk, void *userData)
+{
+	ExplodeModifierData *emd = (ExplodeModifierData *) md;
+	
+	walk(userData, ob, (ID **)&emd->inner_material);
+}
+
 
 ModifierTypeInfo modifierType_Explode = {
 	/* name */              "Explode",
@@ -1813,6 +1852,6 @@ ModifierTypeInfo modifierType_Explode = {
 	/* dependsOnTime */     dependsOnTime,
 	/* dependsOnNormals */  NULL,
 	/* foreachObjectLink */ NULL,
-	/* foreachIDLink */     NULL,
+	/* foreachIDLink */     foreachIDLink,
 	/* foreachTexLink */    NULL,
 };

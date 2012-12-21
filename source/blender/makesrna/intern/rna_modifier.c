@@ -2207,6 +2207,12 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
 	RNA_def_property_range(prop, 0, 1000); //TODO: get correct psys end value here ?
 	RNA_def_property_ui_text(prop, "Map Delay", "Delay in frames after which the object is broken up intially ");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+	
+	prop = RNA_def_property(srna, "inner_material", PROP_POINTER, PROP_NONE);
+	RNA_def_property_ui_text(prop, "Inner Material", "");
+	RNA_def_property_flag(prop, PROP_EDITABLE);
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
 
 }
 

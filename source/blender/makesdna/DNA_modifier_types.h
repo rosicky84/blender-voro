@@ -668,6 +668,7 @@ typedef struct ExplodeModifierData {
     struct BMesh *fracMesh;
     struct Object *tempOb;
 	struct KDTree *patree;
+	struct Material *inner_material;
     
     //for face mode
     int *facepa;
