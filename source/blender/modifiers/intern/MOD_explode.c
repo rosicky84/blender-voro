@@ -1806,6 +1806,14 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						
 						//hope this merges the MTFace data... successfully...
 						mtf = DM_get_tessface_data_layer(d, CD_MTFACE);
+						if (!mtf)
+						{
+							//argh, something went wrong, data will be missing...
+							free(mtface);
+							mtface = NULL;
+							break;
+						}
+						
 						for (f = 0; f < d->numTessFaceData; f++)
 						{
 							MTFace t;
@@ -1825,9 +1833,12 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 							f_index++;
 						}
 					}
-					
-					CustomData_add_layer(&result->faceData, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
-					free(mtface);
+					 
+					if (mtface)
+					{
+						CustomData_add_layer(&result->faceData, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
+						free(mtface);
+					}
 				}
 				
                 return result;
