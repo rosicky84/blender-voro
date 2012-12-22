@@ -647,10 +647,11 @@ enum {
 typedef struct VoronoiCell {
     struct BMVert **vertices;
     float *vertco;
+	struct DerivedMesh *cell_mesh;
     int vertex_count;
     int particle_index;
     float centroid[3];
-    char pad[4];
+	char pad[4];
 } VoronoiCell;
 
 typedef struct VoronoiCells {

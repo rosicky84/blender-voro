@@ -106,6 +106,8 @@ static void freeData(ModifierData *md)
             {
                 free(emd->cells->data[c].vertices);
                 emd->cells->data[c].vertices = NULL;
+				MEM_freeN(emd->cells->data[c].cell_mesh);
+				emd->cells->data[c].cell_mesh = NULL;
             }
             
             free(emd->cells->data);
@@ -141,9 +143,10 @@ static void freeData(ModifierData *md)
 	}
 	
 	if (emd->inner_material)
-	{
+	{	//will be freed by walk/foreachIDLink ?
 		emd->inner_material = NULL;
 	}
+
 }
 
 #else
@@ -185,6 +188,7 @@ static void copyData(ModifierData *md, ModifierData *target)
 	temd->last_map_delay = emd->last_map_delay;
 	temd->inner_material = emd->inner_material;
 }
+
 static int dependsOnTime(ModifierData *UNUSED(md)) 
 {
 	return 1;
@@ -1405,6 +1409,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						DM_to_mesh(dm, emd->tempOb->data, emd->tempOb);
                         copy_m4_m4(emd->tempOb->obmat, ob->obmat);
 						
+						//CustomData_merge(&derivedData->faceData, &dm->faceData, CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, derivedData->numTessFaceData);
+						
                         boolresult = NewBooleanDerivedMesh(dm, emd->tempOb, derivedData, ob, eBooleanModifierOp_Intersect);
                         
                     }
@@ -1419,6 +1425,11 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						boolresult = dm;
 						printf("Boolean Operation failed, using original mesh !\n");
 					}
+					
+					emd->cells->data[emd->cells->count].cell_mesh = CDDM_copy(boolresult);
+					//CustomData_merge(&boolresult->faceData, &emd->cells->data[emd->cells->count].cell_mesh->faceData,
+					//				 CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, boolresult->numTessFaceData);
+					
                     totvert = boolresult->getNumVerts(boolresult);
                     totedge = boolresult->getNumEdges(boolresult);
                     totface = boolresult->getNumTessFaces(boolresult);
@@ -1465,6 +1476,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                         {   //create quad
                             face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], localverts[fa[f].v4], NULL, 0);
 							face->mat_nr = fa[f].mat_nr;
+				
                         }
                         else
                         {   //triangle only
@@ -1720,6 +1732,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	ParticleSystemModifierData *psmd = findPrecedingParticlesystem(ob, md);
     
     DerivedMesh *result = NULL;
+	int i = 0, v_index = 0, e_index = 0, f_index = 0;
     
     if (psmd)
     {
@@ -1772,6 +1785,51 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                 mapCellsToParticles(emd, psmd, md->scene);
                 explodeCells(emd, psmd, md->scene, ob);
                 result = CDDM_from_bmesh(emd->fracMesh, TRUE);
+				
+				DM_ensure_tessface(result);
+				CDDM_calc_edges_tessface(result);
+				CDDM_tessfaces_to_faces(result);
+				CDDM_calc_normals(result);
+				
+				if (emd->use_boolean)
+				{
+					DerivedMesh* d;
+					MTFace* mtface = malloc(sizeof(MTFace));
+					MTFace* mtf = NULL;
+					int f, f_index = 0;
+				//	Image* img;
+					
+					for (i = 0; i < emd->cells->count; i++)
+					{
+						d = emd->cells->data[i].cell_mesh;
+						//f = d->numTessFaceData;
+						
+						//hope this merges the MTFace data... successfully...
+						mtf = DM_get_tessface_data_layer(d, CD_MTFACE);
+						for (f = 0; f < d->numTessFaceData; f++)
+						{
+							MTFace t;
+							mtface = realloc(mtface, sizeof(MTFace) * (f_index+1));
+							t = mtf[f];
+							
+							//setting image with the crowbar, hrm...
+							/*if (t.tpage)
+							{
+								img = t.tpage;
+							}
+							if (!t.tpage)
+							{
+								//t.tpage = img;
+							}*/
+							mtface[f_index] = t;
+							f_index++;
+						}
+					}
+					
+					CustomData_add_layer(&result->faceData, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
+					free(mtface);
+				}
+				
                 return result;
             }
 #else
