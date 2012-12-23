@@ -1731,8 +1731,11 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	ExplodeModifierData *emd = (ExplodeModifierData *) md;
 	ParticleSystemModifierData *psmd = findPrecedingParticlesystem(ob, md);
     
-    DerivedMesh *result = NULL;
-	int i = 0, v_index = 0, e_index = 0, f_index = 0;
+    DerivedMesh *result = NULL, *d = NULL;
+	int i = 0, f, f_index = 0;
+	MTFace* mtface = NULL;
+	MTFace* mtf = NULL;
+	MTFace t;
     
     if (psmd)
     {
@@ -1793,10 +1796,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				
 				if (emd->use_boolean)
 				{
-					DerivedMesh* d;
-					MTFace* mtface = malloc(sizeof(MTFace));
-					MTFace* mtf = NULL;
-					int f, f_index = 0;
+					mtface = malloc(sizeof(MTFace));
+					f_index = 0;
 				//	Image* img;
 					
 					for (i = 0; i < emd->cells->count; i++)
@@ -1816,7 +1817,6 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						
 						for (f = 0; f < d->numTessFaceData; f++)
 						{
-							MTFace t;
 							mtface = realloc(mtface, sizeof(MTFace) * (f_index+1));
 							t = mtf[f];
 							
