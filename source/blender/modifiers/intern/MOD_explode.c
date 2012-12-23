@@ -1504,6 +1504,9 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                &emd->cells->data[emd->cells->count].centroid[1],
                &emd->cells->data[emd->cells->count].centroid[2]);
 		
+		invert_m4_m4(imat, ob->obmat);
+		mul_m4_v3(imat, emd->cells->data[emd->cells->count].centroid);
+		
         //skip newline
         if (feof(fp) == 0)
         {
@@ -1569,7 +1572,7 @@ static void createParticleTree(ExplodeModifierData *emd, ParticleSystemModifierD
 }
 
 
-static void mapCellsToParticles(ExplodeModifierData *emd, ParticleSystemModifierData *psmd, Scene* scene)
+static void mapCellsToParticles(ExplodeModifierData *emd, ParticleSystemModifierData *psmd, Scene* scene, Object* ob)
 {
 	ParticleSystem *psys = psmd->psys;
 	float center[3];
@@ -1584,13 +1587,9 @@ static void mapCellsToParticles(ExplodeModifierData *emd, ParticleSystemModifier
         center[1] = emd->cells->data[c].centroid[1];
         center[2] = emd->cells->data[c].centroid[2];
         
+		//centroids were stored in object space, go to global space (particles are in global space)
+		mul_m4_v3(ob->obmat, center);
         p = BLI_kdtree_find_nearest(emd->patree, center, NULL, NULL);
-        
-      /*  if (p == -1)
-        {
-            emd->cells->data[c].particle_index = -1;
-            continue;
-        }*/
         
 		if (emd->emit_continuously)
 		{
@@ -1670,7 +1669,8 @@ static void explodeCells(ExplodeModifierData *emd,
 			{
 				continue;
 			}
-            //do recalc here ! what about uv maps and such.... ? let boolean (initially) handle this, but
+			
+			//do recalc here ! what about uv maps and such.... ? let boolean (initially) handle this, but
             //i HOPE vertex movement will update the uvs as well... or bust
             
             //particle CACHE causes lots of problems with this kind of calculation.
@@ -1785,7 +1785,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				if (emd->map_delay != emd->last_map_delay) resetCells(emd);
 				emd->last_map_delay = emd->map_delay;
 				createParticleTree(emd, psmd, md->scene, ob);
-                mapCellsToParticles(emd, psmd, md->scene);
+                mapCellsToParticles(emd, psmd, md->scene, ob);
                 explodeCells(emd, psmd, md->scene, ob);
                 result = CDDM_from_bmesh(emd->fracMesh, TRUE);
 				
