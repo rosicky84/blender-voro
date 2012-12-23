@@ -101,7 +101,7 @@ typedef enum eWireDrawMode {
 } eWireDrawMode;
 
 typedef struct drawDMVerts_userData {
-	BMEditMesh *em; /* BMESH BRANCH ONLY */
+	BMEditMesh *em;
 
 	int sel;
 	BMVert *eve_act;
@@ -119,7 +119,7 @@ typedef struct drawDMVerts_userData {
 } drawDMVerts_userData;
 
 typedef struct drawDMEdgesSel_userData {
-	BMEditMesh *em; /* BMESH BRANCH ONLY */
+	BMEditMesh *em;
 
 	unsigned char *baseCol, *selCol, *actCol;
 	BMEdge *eed_act;
@@ -128,8 +128,8 @@ typedef struct drawDMEdgesSel_userData {
 typedef struct drawDMFacesSel_userData {
 	unsigned char *cols[3];
 
-	DerivedMesh *dm; /* BMESH BRANCH ONLY */
-	BMEditMesh *em;  /* BMESH BRANCH ONLY */
+	DerivedMesh *dm;
+	BMEditMesh *em;
 
 	BMFace *efa_act;
 	int *orig_index_mf_to_mpoly;
@@ -1284,6 +1284,13 @@ static void drawlamp(Scene *scene, View3D *v3d, RegionView3D *rv3d, Base *base,
 			glBegin(GL_LINE_STRIP);
 			glVertex3fv(lvec_clip);
 			glVertex3fv(vvec_clip);
+			glEnd();
+		}
+		/* Else, draw spot direction (using distance as end limit, same as for Area lamp). */
+		else {
+			glBegin(GL_LINE_STRIP);
+			glVertex3f(0.0, 0.0, -circrad);
+			glVertex3f(0.0, 0.0, -la->dist);
 			glEnd();
 		}
 	}
@@ -3237,11 +3244,15 @@ static void draw_mesh_fancy(Scene *scene, ARegion *ar, View3D *v3d, RegionView3D
 	}
 	
 	if (is_obact && paint_vertsel_test(ob)) {
-		
+		const int use_depth = (v3d->flag & V3D_ZBUF_SELECT);
 		glColor3f(0.0f, 0.0f, 0.0f);
 		glPointSize(UI_GetThemeValuef(TH_VERTEX_SIZE));
-		
+
+		if (!use_depth) glDisable(GL_DEPTH_TEST);
+		else            bglPolygonOffset(rv3d->dist, 1.0);
 		drawSelectedVertices(dm, ob->data);
+		if (!use_depth) glEnable(GL_DEPTH_TEST);
+		else            bglPolygonOffset(rv3d->dist, 0.0);
 		
 		glPointSize(1.0f);
 	}
@@ -7092,14 +7103,28 @@ static DMDrawOption bbs_mesh_solid_hide2__setDrawOpts(void *userData, int index)
 		return DM_DRAW_OPTION_SKIP;
 	}
 }
-static void bbs_mesh_solid(Scene *scene, Object *ob)
+
+static void bbs_mesh_solid_verts(Scene *scene, Object *ob)
+{
+	Mesh *me = ob->data;
+	DerivedMesh *dm = mesh_get_derived_final(scene, ob, scene->customdata_mask);
+	glColor3ub(0, 0, 0);
+
+	dm->drawMappedFaces(dm, bbs_mesh_solid_hide2__setDrawOpts, GPU_enable_material, NULL, me, 0);
+
+	bbs_obmode_mesh_verts(ob, dm, 1);
+	bm_vertoffs = me->totvert + 1;
+	dm->release(dm);
+}
+
+static void bbs_mesh_solid_faces(Scene *scene, Object *ob)
 {
 	DerivedMesh *dm = mesh_get_derived_final(scene, ob, scene->customdata_mask);
 	Mesh *me = (Mesh *)ob->data;
 	
 	glColor3ub(0, 0, 0);
 
-	if ((me->editflag & ME_EDIT_PAINT_MASK))
+	if ((me->editflag & ME_EDIT_PAINT_FACE_SEL))
 		dm->drawMappedFaces(dm, bbs_mesh_solid_hide__setDrawOpts, GPU_enable_material, NULL, me, 0);
 	else
 		dm->drawMappedFaces(dm, bbs_mesh_solid__setDrawOpts, GPU_enable_material, NULL, me, 0);
@@ -7153,22 +7178,14 @@ void draw_object_backbufsel(Scene *scene, View3D *v3d, RegionView3D *rv3d, Objec
 			}
 			else {
 				Mesh *me = ob->data;
-				if ((me->editflag & ME_EDIT_VERT_SEL) &&
+				if ((me->editflag & ME_EDIT_PAINT_VERT_SEL) &&
 				    /* currently vertex select only supports weight paint */
 				    (ob->mode & OB_MODE_WEIGHT_PAINT))
 				{
-					DerivedMesh *dm = mesh_get_derived_final(scene, ob, scene->customdata_mask);
-					glColor3ub(0, 0, 0);
-
-					dm->drawMappedFaces(dm, bbs_mesh_solid_hide2__setDrawOpts, GPU_enable_material, NULL, me, 0);
-
-
-					bbs_obmode_mesh_verts(ob, dm, 1);
-					bm_vertoffs = me->totvert + 1;
-					dm->release(dm);
+					bbs_mesh_solid_verts(scene, ob);
 				}
 				else {
-					bbs_mesh_solid(scene, ob);
+					bbs_mesh_solid_faces(scene, ob);
 				}
 			}
 			break;

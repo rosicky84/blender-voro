@@ -123,6 +123,17 @@ void BKE_mesh_flush_hidden_from_verts(const struct MVert *mvert,
                                       struct MEdge *medge, int totedge,
                                       struct MPoly *mpoly, int totpoly);
 
+void BKE_mesh_flush_select_from_polys_ex(struct MVert *mvert,       const int totvert,
+                                         struct MLoop *mloop,
+                                         struct MEdge *medge,       const int totedge,
+                                         const struct MPoly *mpoly, const int totpoly);
+void BKE_mesh_flush_select_from_polys(struct Mesh *me);
+void BKE_mesh_flush_select_from_verts_ex(const struct MVert *mvert, const int totvert,
+                                         struct MLoop *mloop,
+                                         struct MEdge *medge,       const int totedge,
+                                         struct MPoly *mpoly,       const int totpoly);
+void BKE_mesh_flush_select_from_verts(struct Mesh *me);
+
 void BKE_mesh_unlink(struct Mesh *me);
 void BKE_mesh_free(struct Mesh *me, int unlink);
 struct Mesh *BKE_mesh_add(const char *name);
@@ -152,7 +163,7 @@ void BKE_mesh_from_nurbs_displist(struct Object *ob, struct ListBase *dispbase,
                                   int **orco_index_ptr);
 void BKE_mesh_from_curve(struct Scene *scene, struct Object *ob);
 void free_dverts(struct MDeformVert *dvert, int totvert);
-void copy_dverts(struct MDeformVert *dst, struct MDeformVert *src, int totvert); /* __NLA */
+void copy_dverts(struct MDeformVert *dst, const struct MDeformVert *src, int totvert);
 void BKE_mesh_delete_material_index(struct Mesh *me, short index);
 void BKE_mesh_smooth_flag_set(struct Object *meshOb, int enableSmooth);
 void BKE_mesh_convert_mfaces_to_mpolys(struct Mesh *mesh);
