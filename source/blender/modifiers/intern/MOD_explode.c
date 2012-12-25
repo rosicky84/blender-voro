@@ -1257,6 +1257,7 @@ static int getChildren(Scene* scene, Object* ob, Object* children)
 static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float **points)
 {
 	int totpoint = 0, totchildren = 0;
+	int fallback = FALSE;
 	Object* children = NULL;
 
 	if (emd->point_source & (eChildParticles | eChildVerts ))
@@ -1273,18 +1274,20 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 	if (emd->point_source & eChildParticles)
 	{
 		totpoint += points_from_particles(children, totchildren, scene, points , totpoint);
-		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)))
+		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
 		{	// if no child particles available, return original geometry
 			totpoint += points_from_verts(ob, 1, points, totpoint);
+			fallback = TRUE;
 		}
 	}
 	
 	if (emd->point_source & eChildVerts)
 	{
 		totpoint += points_from_verts(children, totchildren, points, totpoint);
-		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)))
+		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
 		{	// if no childverts available, return original geometry
 			totpoint += points_from_verts(ob, 1, points, totpoint);
+			fallback = TRUE;
 		}
 	}
 	
@@ -1292,9 +1295,10 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 	{
 		totpoint += points_from_greasepencil(ob, 1, points, totpoint);
 		
-		if ((totpoint == 0) && (!emd->point_source & eOwnVerts))
+		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
 		{	// if no greasepencil available, return original geometry
 			totpoint += points_from_verts(ob, 1, points, totpoint);
+			fallback = TRUE;
 		}
 	}
 	
