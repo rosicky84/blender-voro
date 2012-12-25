@@ -1120,9 +1120,9 @@ static int dm_minmax(DerivedMesh* dm, float min[3], float max[3])
 	return (verts != 0);
 }
 
-static int points_from_verts(Object* ob, int totobj, float* points)
+static int points_from_verts(Object* ob, int totobj, float** points, int p_exist)
 {
-	int v, o, pt = 0;
+	int v, o, pt = p_exist;
 	float co[3];
 	
 	for (o = 0; o < totobj; o++)
@@ -1132,7 +1132,7 @@ static int points_from_verts(Object* ob, int totobj, float* points)
 			Mesh* me = (Mesh*)ob[o].data;
 			for (v = 0; v < me->totvert; v++)
 			{
-				points = realloc(points, ((pt+1)*3)*sizeof(float));
+				*points = realloc(*points, ((pt+1)*3)*sizeof(float));
 				
 				co[0] = me->mvert[v].co[0];
 				co[1] = me->mvert[v].co[1];
@@ -1140,9 +1140,9 @@ static int points_from_verts(Object* ob, int totobj, float* points)
 				
 				mul_m4_v3(ob->obmat, co);
 				
-				points[pt*3] = co[0];
-				points[pt*3+1] = co[1];
-				points[pt*3+2] = co[2];
+				(*points)[pt*3] = co[0];
+				(*points)[pt*3+1] = co[1];
+				(*points)[pt*3+2] = co[2];
 				pt++;
 			}
 		}
@@ -1151,9 +1151,9 @@ static int points_from_verts(Object* ob, int totobj, float* points)
 	return pt;
 }
 
-static int points_from_particles(Object* ob, int totobj, Scene* scene, float* points)
+static int points_from_particles(Object* ob, int totobj, Scene* scene, float** points, int p_exist)
 {
-	int o, p, pt = 0;
+	int o, p, pt = p_exist;
 	ParticleSystemModifierData* psmd;
 	ParticleData* pa;
 	ParticleSimulationData sim = {NULL};
@@ -1167,18 +1167,18 @@ static int points_from_particles(Object* ob, int totobj, Scene* scene, float* po
 			if (mod->type == eModifierType_ParticleSystem)
 			{
 				psmd = (ParticleSystemModifierData*)mod;
+				sim.scene = scene;
+				sim.ob = ob;
+				sim.psys = psmd->psys;
+				sim.psmd = psmd;
+				
 				for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
 				{
-					sim.scene = scene;
-					sim.ob = ob;
-					sim.psys = psmd->psys;
-					sim.psmd = psmd;
-
 					psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
-					points = realloc(points, ((pt+1)*3)* sizeof(float));
-					points[pt*3] = birth.co[0];
-					points[pt*3+1] = birth.co[1];
-					points[pt*3+2] = birth.co[2];
+					*points = realloc(*points, ((pt+1)*3)* sizeof(float));
+					(*points)[pt*3] = birth.co[0];
+					(*points)[pt*3+1] = birth.co[1];
+					(*points)[pt*3+2] = birth.co[2];
 					pt++;
 				}
 			}
@@ -1188,27 +1188,30 @@ static int points_from_particles(Object* ob, int totobj, Scene* scene, float* po
 	return pt;
 }
 
-static int points_from_greasepencil(Object* ob, int totobj, float* points)
+static int points_from_greasepencil(Object* ob, int totobj, float** points, int p_exist)
 {
 	bGPDlayer* gpl;
 	bGPDframe* gpf;
 	bGPDstroke* gps;
-	int pt = 0, p, o;
+	int pt = p_exist, p, o;
 	
 	for (o = 0; o < totobj; o++)
 	{
-		for (gpl = ob[o].gpd->layers.first; gpl; gpl = gpl->next)
+		if ((ob[o].gpd) && (ob[o].gpd->layers.first))
 		{
-			gpf = gpl->actframe;
-			for (gps = gpf->strokes.first; gps; gps = gps->next)
+			for (gpl = ob[o].gpd->layers.first; gpl; gpl = gpl->next)
 			{
-				for (p = 0; p < gps->totpoints; p++)
+				gpf = gpl->actframe;
+				for (gps = gpf->strokes.first; gps; gps = gps->next)
 				{
-					points = realloc(points, ((pt+1)*3)*sizeof(float));
-					points[pt*3] = gps->points[p].x;
-					points[pt*3+1] = gps->points[p].y;
-					points[pt*3+2] = gps->points[p].z;
-					pt++;
+					for (p = 0; p < gps->totpoints; p++)
+					{
+						*points = realloc(*points, ((pt+1)*3)*sizeof(float));
+						(*points)[pt*3] = gps->points[p].x;
+						(*points)[pt*3+1] = gps->points[p].y;
+						(*points)[pt*3+2] = gps->points[p].z;
+						pt++;
+					}
 				}
 			}
 		}
@@ -1251,12 +1254,11 @@ static int getChildren(Scene* scene, Object* ob, Object* children)
 	return ctr;
 }
 
-static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float *points)
+static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float **points)
 {
 	int totpoint = 0, totchildren = 0;
 	Object* children = NULL;
-	
-	points = malloc(sizeof(float));
+
 	if (emd->point_source & (eChildParticles | eChildVerts ))
 	{
 		children = malloc(sizeof(Object));
@@ -1265,28 +1267,42 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 	
 	if (emd->point_source & eOwnParticles)
 	{
-		totpoint += points_from_particles(ob, 1, scene, points);
+		totpoint += points_from_particles(ob, 1, scene, points, totpoint);
 	}
 	
 	if (emd->point_source & eChildParticles)
 	{
-		totpoint += points_from_particles(children, totchildren, scene, points);
-	}
-	
-	if (emd->point_source & eOwnVerts)
-	{
-		totpoint += points_from_verts(ob, 1, points);
+		totpoint += points_from_particles(children, totchildren, scene, points , totpoint);
+		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)))
+		{	// if no child particles available, return original geometry
+			totpoint += points_from_verts(ob, 1, points, totpoint);
+		}
 	}
 	
 	if (emd->point_source & eChildVerts)
 	{
-		totpoint += points_from_verts(children, totchildren, points);
+		totpoint += points_from_verts(children, totchildren, points, totpoint);
+		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)))
+		{	// if no childverts available, return original geometry
+			totpoint += points_from_verts(ob, 1, points, totpoint);
+		}
 	}
 	
 	if (emd->point_source & eGreasePencil)
 	{
-		totpoint += points_from_greasepencil(ob, 1, points);
+		totpoint += points_from_greasepencil(ob, 1, points, totpoint);
+		
+		if ((totpoint == 0) && (!emd->point_source & eOwnVerts))
+		{	// if no greasepencil available, return original geometry
+			totpoint += points_from_verts(ob, 1, points, totpoint);
+		}
 	}
+	
+	if (emd->point_source & eOwnVerts)
+	{
+		totpoint += points_from_verts(ob, 1, points, totpoint);
+	}
+
 	
 	if (children)
 	{
@@ -1337,7 +1353,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     float theta = 0.0f;
 	int n_size = 8;
     
-	float* points;
+	float* points = NULL;
 	int totpoint = 0;
     
     if (emd->use_boolean)
@@ -1380,7 +1396,12 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	if (!emd->refracture)
 	{
 		points = malloc(sizeof(float));
-		totpoint = get_points(emd, emd->modifier.scene, ob, points);
+		totpoint = get_points(emd, emd->modifier.scene, ob, &points);
+		if (emd->point_source == eOwnVerts)
+		{
+			//make container a little bigger ?
+			theta = 0.01f;
+		}
 		container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
 								  n_size, n_size, n_size, FALSE, FALSE, FALSE, totpoint);
 		
@@ -1391,8 +1412,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 			co[2] = points[p*3+2];
 			container_put(container, particle_order, p, co[0], co[1], co[2]);
 		}
-		
-		free(points);
 	}
 	else
 	{
@@ -1442,6 +1461,13 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     container_print_custom(container, "%P v %t f %C", fp);
     fflush(fp);
     rewind(fp);
+	
+	if (points)
+	{
+		free(points);
+		points = NULL;
+	}
+
     
     bm = DM_to_bmesh(derivedData);
     

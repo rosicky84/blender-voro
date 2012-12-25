@@ -2131,7 +2131,7 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
         {eOwnParticles, "OWN_PARTICLES", 0, "Own Particles", "Use own particles as point cloud"},
         {eOwnVerts, "OWN_VERTS", 0, "Own Vertices", "Use own vertices as point cloud"},
 		{eChildParticles, "CHILD_PARTICLES", 0, "Child Particles", "Use particles of child objects as point cloud"},
-        {eOwnVerts, "CHILD_VERTS", 0, "Child Vertices", "Use child vertices as point cloud"},
+        {eChildVerts, "CHILD_VERTS", 0, "Child Vertices", "Use child vertices as point cloud"},
 		{eGreasePencil, "GREASE_PENCIL", 0, "Grease Pencil", "Use grease pencil points as point cloud"},
         {0, NULL, 0, NULL, NULL}
     };
@@ -2190,6 +2190,8 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
 	
 	prop = RNA_def_property(srna, "point_source", PROP_ENUM, PROP_NONE);
     RNA_def_property_enum_items(prop, prop_point_source_items);
+	RNA_def_property_flag(prop, PROP_ENUM_FLAG);
+	RNA_def_property_enum_default(prop, eOwnParticles);
     RNA_def_property_ui_text(prop, "Point Source", "Source of point cloud");
     RNA_def_property_update(prop, 0, "rna_Modifier_update");
     
