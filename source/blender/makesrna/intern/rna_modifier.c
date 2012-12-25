@@ -2126,6 +2126,16 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
         {eFractureMode_Faces, "FACES", 0, "Mesh Faces", "Move mesh faces with particles"},
         {0, NULL, 0, NULL, NULL}
     };
+	
+	static EnumPropertyItem prop_point_source_items[] = {
+        {eOwnParticles, "OWN_PARTICLES", 0, "Own Particles", "Use own particles as point cloud"},
+        {eOwnVerts, "OWN_VERTS", 0, "Own Vertices", "Use own vertices as point cloud"},
+		{eChildParticles, "CHILD_PARTICLES", 0, "Child Particles", "Use particles of child objects as point cloud"},
+        {eOwnVerts, "CHILD_VERTS", 0, "Child Vertices", "Use child vertices as point cloud"},
+		{eGreasePencil, "GREASE_PENCIL", 0, "Grease Pencil", "Use grease pencil points as point cloud"},
+        {0, NULL, 0, NULL, NULL}
+    };
+
 
 	srna = RNA_def_struct(brna, "ExplodeModifier", "Modifier");
 	RNA_def_struct_ui_text(srna, "Explode Modifier", "Explosion effect modifier based on a particle system");
@@ -2176,6 +2186,11 @@ static void rna_def_modifier_explode(BlenderRNA *brna)
     prop = RNA_def_property(srna, "mode", PROP_ENUM, PROP_NONE);
     RNA_def_property_enum_items(prop, prop_mode_items);
     RNA_def_property_ui_text(prop, "Mode", "Mode of fracture");
+    RNA_def_property_update(prop, 0, "rna_Modifier_update");
+	
+	prop = RNA_def_property(srna, "point_source", PROP_ENUM, PROP_NONE);
+    RNA_def_property_enum_items(prop, prop_point_source_items);
+    RNA_def_property_ui_text(prop, "Point Source", "Source of point cloud");
     RNA_def_property_update(prop, 0, "rna_Modifier_update");
     
     prop = RNA_def_property(srna, "use_boolean", PROP_BOOLEAN, PROP_NONE);

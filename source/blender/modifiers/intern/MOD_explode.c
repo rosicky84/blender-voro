@@ -34,6 +34,7 @@
 
 
 #include "DNA_meshdata_types.h"
+#include "DNA_mesh_types.h"
 #include "DNA_scene_types.h"
 #include "DNA_object_types.h"
 
@@ -64,6 +65,7 @@
 #include <ctype.h>
 #include "DNA_material_types.h"
 #include "BKE_material.h"
+#include "DNA_gpencil_types.h"
 
 static void initData(ModifierData *md)
 {
@@ -89,6 +91,7 @@ static void initData(ModifierData *md)
 	emd->map_delay = 1;
 	emd->last_map_delay = 1;
 	emd->inner_material = NULL;
+	emd->point_source = eOwnParticles;
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -187,6 +190,7 @@ static void copyData(ModifierData *md, ModifierData *target)
 	temd->map_delay = emd->map_delay;
 	temd->last_map_delay = emd->last_map_delay;
 	temd->inner_material = emd->inner_material;
+	temd->point_source = emd->point_source;
 }
 
 static int dependsOnTime(ModifierData *UNUSED(md)) 
@@ -1116,6 +1120,185 @@ static int dm_minmax(DerivedMesh* dm, float min[3], float max[3])
 	return (verts != 0);
 }
 
+static int points_from_verts(Object* ob, int totobj, float* points)
+{
+	int v, o, pt = 0;
+	float co[3];
+	
+	for (o = 0; o < totobj; o++)
+	{
+		if (ob[o].type == OB_MESH)
+		{
+			Mesh* me = (Mesh*)ob[o].data;
+			for (v = 0; v < me->totvert; v++)
+			{
+				points = realloc(points, ((pt+1)*3)*sizeof(float));
+				
+				co[0] = me->mvert[v].co[0];
+				co[1] = me->mvert[v].co[1];
+				co[2] = me->mvert[v].co[2];
+				
+				mul_m4_v3(ob->obmat, co);
+				
+				points[pt*3] = co[0];
+				points[pt*3+1] = co[1];
+				points[pt*3+2] = co[2];
+				pt++;
+			}
+		}
+	}
+	
+	return pt;
+}
+
+static int points_from_particles(Object* ob, int totobj, Scene* scene, float* points)
+{
+	int o, p, pt = 0;
+	ParticleSystemModifierData* psmd;
+	ParticleData* pa;
+	ParticleSimulationData sim = {NULL};
+    ParticleKey birth;
+	ModifierData* mod;
+	
+	for (o = 0; o < totobj; o++)
+	{
+		for (mod = ob[o].modifiers.first; mod; mod = mod->next)
+		{
+			if (mod->type == eModifierType_ParticleSystem)
+			{
+				psmd = (ParticleSystemModifierData*)mod;
+				for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
+				{
+					sim.scene = scene;
+					sim.ob = ob;
+					sim.psys = psmd->psys;
+					sim.psmd = psmd;
+
+					psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
+					points = realloc(points, ((pt+1)*3)* sizeof(float));
+					points[pt*3] = birth.co[0];
+					points[pt*3+1] = birth.co[1];
+					points[pt*3+2] = birth.co[2];
+					pt++;
+				}
+			}
+		}
+	}
+	
+	return pt;
+}
+
+static int points_from_greasepencil(Object* ob, int totobj, float* points)
+{
+	bGPDlayer* gpl;
+	bGPDframe* gpf;
+	bGPDstroke* gps;
+	int pt = 0, p, o;
+	
+	for (o = 0; o < totobj; o++)
+	{
+		for (gpl = ob[o].gpd->layers.first; gpl; gpl = gpl->next)
+		{
+			gpf = gpl->actframe;
+			for (gps = gpf->strokes.first; gps; gps = gps->next)
+			{
+				for (p = 0; p < gps->totpoints; p++)
+				{
+					points = realloc(points, ((pt+1)*3)*sizeof(float));
+					points[pt*3] = gps->points[p].x;
+					points[pt*3+1] = gps->points[p].y;
+					points[pt*3+2] = gps->points[p].z;
+					pt++;
+				}
+			}
+		}
+	}
+	
+	return pt;
+}
+
+static int isChild(Object* ob, Object* child)
+{
+	Object *par;
+	if (child->parent && child->parent == ob)
+	{
+		return TRUE;
+	}
+	
+	for (par = child->parent; par; par = par->parent) {
+		if (par == ob) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+static int getChildren(Scene* scene, Object* ob, Object* children)
+{
+	Base* base;
+	int ctr = 0;
+	
+	for (base = scene->base.first; base; base = base->next)
+	{
+		if (isChild(ob, base->object))
+		{
+			children = realloc(children, sizeof(Object) * (ctr+1));
+			children[ctr] = *(base->object);
+			ctr++;
+		}
+	}
+	
+	return ctr;
+}
+
+static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float *points)
+{
+	int totpoint = 0, totchildren = 0;
+	Object* children = NULL;
+	
+	points = malloc(sizeof(float));
+	if (emd->point_source & (eChildParticles | eChildVerts ))
+	{
+		children = malloc(sizeof(Object));
+		totchildren += getChildren(scene, ob, children);
+	}
+	
+	if (emd->point_source & eOwnParticles)
+	{
+		totpoint += points_from_particles(ob, 1, scene, points);
+	}
+	
+	if (emd->point_source & eChildParticles)
+	{
+		totpoint += points_from_particles(children, totchildren, scene, points);
+	}
+	
+	if (emd->point_source & eOwnVerts)
+	{
+		totpoint += points_from_verts(ob, 1, points);
+	}
+	
+	if (emd->point_source & eChildVerts)
+	{
+		totpoint += points_from_verts(children, totchildren, points);
+	}
+	
+	if (emd->point_source & eGreasePencil)
+	{
+		totpoint += points_from_greasepencil(ob, 1, points);
+	}
+	
+	if (children)
+	{
+		free(children);
+		children = NULL;
+	}
+	
+	return totpoint;
+}
+
+
+
 // create the voronoi cell faces inside the existing mesh
 static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSystemModifierData* psmd, ExplodeModifierData* emd)
 {
@@ -1124,8 +1307,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     float min[3], max[3];
     int p = 0;
     ParticleData *pa = NULL;
-    ParticleSimulationData sim = {NULL};
-    ParticleKey birth;
+    //ParticleSimulationData sim = {NULL};
+    //ParticleKey birth;
     float co[3], vco[3];//, cfra;
     BMesh *bm = NULL, *bmtemp = NULL;
     
@@ -1154,6 +1337,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     float theta = 0.0f;
 	int n_size = 8;
     
+	float* points;
+	int totpoint = 0;
     
     if (emd->use_boolean)
     {
@@ -1181,46 +1366,58 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     // printf("Container: %f;%f;%f;%f;%f;%f \n", min[0], max[0], min[1], max[1], min[2], max[2]);
     //TODO: maybe support simple shapes without boolean, but eh...
     container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
-                              n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart);
+                              n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart); //add number of parts here!
    // particle_order = particle_order_new();
     
     
-    sim.scene = emd->modifier.scene;
+   /* sim.scene = emd->modifier.scene;
 	sim.ob = ob;
 	sim.psys = psmd->psys;
-	sim.psmd = psmd;
-    
-    
-    for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
-    {
-        if (emd->refracture)
-        {
-            //current state
-            //  state.time = BKE_scene_frame_get(emd->modifier.scene);
-            // psys_get_particle_state(&sim, p, &state, 1);
-            co[0] = pa->state.co[0];
-            co[1] = pa->state.co[1];
-            co[2] = pa->state.co[2];
-        }
-        else
-        {
-            //start state
-            //state.time = psmd->psys->part->sta;
-            //psys_get_particle_state(&sim, p, &birth, 1);
-            psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
-            co[0] = birth.co[0];
-            co[1] = birth.co[1];
-            co[2] = birth.co[2];
-            //psys_particle_on_emitter(psmd, psmd->psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
-            
-            //if (BKE_scene_frame_get(emd->modifier.scene) != psmd->psys->part->sta))
-        }
-        
-        // printf("Particle: %f, %f, %f \n", co[0], co[1], co[2]);
-        
-        //use particle positions to fracture the object, tell those to the voronoi container
-        container_put(container, particle_order, p, co[0], co[1], co[2]);
-    }
+	sim.psmd = psmd;*/
+
+	
+	//choose from point sources here
+	if (!emd->refracture)
+	{
+		points = malloc(sizeof(float));
+		totpoint = get_points(emd, emd->modifier.scene, ob, points);
+		container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
+								  n_size, n_size, n_size, FALSE, FALSE, FALSE, totpoint);
+		
+		for (p = 0; p < totpoint; p++)
+		{
+			co[0] = points[p*3];
+			co[1] = points[p*3+1];
+			co[2] = points[p*3+2];
+			container_put(container, particle_order, p, co[0], co[1], co[2]);
+		}
+		
+		free(points);
+	}
+	else
+	{
+		container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
+								  n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart);
+		for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
+		{
+			co[0] = pa->state.co[0];
+			co[1] = pa->state.co[1];
+			co[2] = pa->state.co[2];
+			
+			/*else
+			{
+				psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
+				co[0] = birth.co[0];
+				co[1] = birth.co[1];
+				co[2] = birth.co[2];
+			}*/
+			
+			// printf("Particle: %f, %f, %f \n", co[0], co[1], co[2]);
+			
+			//use particle positions to fracture the object, tell those to the voronoi container
+			container_put(container, particle_order, p, co[0], co[1], co[2]);
+		}
+	}
     
     //TODO: write results to temp file, ensure using the systems temp dir...
     // this prints out vertex positions and face indexes

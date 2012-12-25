@@ -660,6 +660,14 @@ typedef struct VoronoiCells {
     char pad[4];
 } VoronoiCells;
 
+typedef enum {
+	eOwnVerts = (1 << 0),
+	eOwnParticles = (1 << 1),
+	eChildVerts = (1 << 2),
+	eChildParticles = (1 << 3),
+	eGreasePencil = (1 << 4),
+	
+} eVoronoiPointSource;
 
 typedef struct ExplodeModifierData {
 	ModifierData modifier;
@@ -680,8 +688,8 @@ typedef struct ExplodeModifierData {
     //for voronoi cell mode
     int use_boolean, refracture, use_cache, flip_normal;
     int last_part, last_bool, last_flip, emit_continuously;
-    int mode, map_delay, last_map_delay;
-	char pad[4];
+    int mode, map_delay, last_map_delay, point_source;
+	//char pad[4];
     
 } ExplodeModifierData;
 

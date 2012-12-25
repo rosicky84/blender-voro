@@ -282,6 +282,7 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
 
         if (md.mode == 'CELLS'):
             col = split.column()
+            col.prop(md, "point_source")
             col.prop(md, "use_boolean")
             if (md.use_boolean == True):
                 col.prop(md, "flip_normal")
