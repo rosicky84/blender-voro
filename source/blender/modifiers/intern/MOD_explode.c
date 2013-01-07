@@ -1377,7 +1377,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
 	float* points = NULL;
 	int totpoint = 0;
-	float loc[3], rot[4];
     
     if (emd->use_boolean)
     {
@@ -1520,8 +1519,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         emd->cells->data[emd->cells->count].vertco = malloc(sizeof(float));
         emd->cells->data[emd->cells->count].vertex_count = 0;
         emd->cells->data[emd->cells->count].particle_index = -1;
-		emd->cells->data[emd->cells->count].updateMesh = updateMesh;
-        
+		
+			
         bmtemp = BM_mesh_create(&bm_mesh_chunksize_default);
         tempvert = malloc(sizeof(BMVert*));
         tempvert_index = 0;

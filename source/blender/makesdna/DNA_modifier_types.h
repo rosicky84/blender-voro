@@ -689,7 +689,8 @@ typedef struct ExplodeModifierData {
     int use_boolean, refracture, use_cache, flip_normal;
     int last_part, last_bool, last_flip, emit_continuously;
     int mode, map_delay, last_map_delay, point_source;
-	//char pad[4];
+	int last_point_source;
+	char pad[4];
     
 } ExplodeModifierData;
 
