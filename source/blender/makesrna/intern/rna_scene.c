@@ -1131,7 +1131,7 @@ static void rna_SceneRenderLayer_name_set(PointerRNA *ptr, const char *value)
 
 static char *rna_SceneRenderLayer_path(PointerRNA *ptr)
 {
-	SceneRenderLayer *srl = (SceneRenderLayer*)ptr->data;
+	SceneRenderLayer *srl = (SceneRenderLayer *)ptr->data;
 	return BLI_sprintfN("render.layers[\"%s\"]", srl->name);
 }
 
@@ -2326,7 +2326,7 @@ static void rna_def_scene_game_recast_data(BlenderRNA *brna)
 	prop = RNA_def_property(srna, "slope_max", PROP_FLOAT, PROP_ANGLE);
 	RNA_def_property_float_sdna(prop, NULL, "agentmaxslope");
 	RNA_def_property_range(prop, 0, M_PI / 2);
-	RNA_def_property_ui_text(prop, "Max Slope", "Maximum walkable slope angle in degrees");
+	RNA_def_property_ui_text(prop, "Max Slope", "Maximum walkable slope angle");
 	RNA_def_property_update(prop, NC_SCENE, NULL);
 
 
@@ -3332,8 +3332,7 @@ static void rna_def_scene_render_data(BlenderRNA *brna)
 		
 	static EnumPropertyItem alpha_mode_items[] = {
 		{R_ADDSKY, "SKY", 0, "Sky", "Transparent pixels are filled with sky color"},
-		{R_ALPHAPREMUL, "PREMUL", 0, "Premultiplied", "Transparent RGB pixels are multiplied by the alpha channel"},
-		{R_ALPHAKEY, "STRAIGHT", 0, "Straight Alpha", "Transparent RGB and alpha pixels are unmodified"},
+		{R_ALPHAPREMUL, "TRANSPARENT", 0, "Transparent", "World background is transparent with premultiplied alpha"},
 		{0, NULL, 0, NULL, NULL}
 	};
 
@@ -3694,10 +3693,9 @@ static void rna_def_scene_render_data(BlenderRNA *brna)
 	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
 	RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, "rna_Scene_glsl_update");
 	
-	prop = RNA_def_property(srna, "motion_blur_shutter", PROP_FLOAT, PROP_NONE);
+	prop = RNA_def_property(srna, "motion_blur_shutter", PROP_FLOAT, PROP_UNSIGNED);
 	RNA_def_property_float_sdna(prop, NULL, "blurfac");
-	RNA_def_property_range(prop, 0.01f, 10.0f);
-	RNA_def_property_ui_range(prop, 0.01, 2.0f, 1, 0);
+	RNA_def_property_ui_range(prop, 0.01f, 2.0f, 1, 0);
 	RNA_def_property_ui_text(prop, "Shutter", "Time taken in frames between shutter open and close");
 	RNA_def_property_clear_flag(prop, PROP_ANIMATABLE);
 	RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, "rna_Scene_glsl_update");
@@ -3766,13 +3764,6 @@ static void rna_def_scene_render_data(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "Sequencer",
 	                         "Process the render (and composited) result through the video sequence "
 	                         "editor pipeline, if sequencer strips exist");
-	RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, NULL);
-	
-	prop = RNA_def_property(srna, "use_color_unpremultiply", PROP_BOOLEAN, PROP_NONE);
-	RNA_def_property_boolean_sdna(prop, NULL, "color_mgt_flag", R_COLOR_MANAGEMENT_PREDIVIDE);
-	RNA_def_property_ui_text(prop, "Color Unpremultiply",
-	                         "For premultiplied alpha render output, do color space conversion on "
-	                         "colors without alpha, to avoid fringing on light backgrounds");
 	RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, NULL);
 	
 	prop = RNA_def_property(srna, "use_file_extension", PROP_BOOLEAN, PROP_NONE);
@@ -3925,6 +3916,12 @@ static void rna_def_scene_render_data(BlenderRNA *brna)
 	RNA_def_property_range(prop, 64, 1024);
 	RNA_def_property_int_default(prop, 256);
 	RNA_def_property_ui_text(prop, "Samples", "Number of samples used for ambient occlusion baking from multires");
+	RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, NULL);
+
+	prop = RNA_def_property(srna, "use_bake_to_vertex_color", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "bake_flag", R_BAKE_VCOL);
+	RNA_def_property_ui_text(prop, "Bake to Vertex Color",
+	                         "Bake to vertex colors instead of to a UV-mapped image");
 	RNA_def_property_update(prop, NC_SCENE | ND_RENDER_OPTIONS, NULL);
 
 	/* stamp */

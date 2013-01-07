@@ -196,7 +196,7 @@ dict_uimsgs = {
     "symmetrize",
     "trackability",
     "transmissivity",
-    "rasterized", "rasterization",, "rasterizer"
+    "rasterized", "rasterization", "rasterizer",
     "renderer", "renderable", "renderability",
 
     # Abbreviations
@@ -381,6 +381,7 @@ dict_uimsgs = {
     "texface",
     "timeline", "timelines",
     "tosphere",
+    "uilist",
     "vcol", "vcols",
     "vgroup", "vgroups",
     "vinterlace",

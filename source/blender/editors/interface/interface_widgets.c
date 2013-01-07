@@ -1324,11 +1324,13 @@ static void widget_draw_text_icon(uiFontStyle *fstyle, uiWidgetColors *wcol, uiB
 			/* icons default draw 0.8f x height */
 			rect->xmin += (int)(0.8f * BLI_rcti_size_y(rect));
 
-			if (but->editstr || (but->flag & UI_TEXT_LEFT))
-				rect->xmin += 0.4f * U.widget_unit;
+			if (but->editstr || (but->flag & UI_TEXT_LEFT)) {
+				rect->xmin += (0.4f * U.widget_unit) / but->block->aspect;
+			}
 		}
-		else if ((but->flag & UI_TEXT_LEFT))
-			rect->xmin += 0.4f * U.widget_unit;
+		else if ((but->flag & UI_TEXT_LEFT)) {
+			rect->xmin += (0.4f * U.widget_unit) / but->block->aspect;
+		}
 
 		/* always draw text for textbutton cursor */
 		widget_draw_text(fstyle, wcol, but, rect);
@@ -2319,7 +2321,7 @@ void ui_draw_link_bezier(const rcti *rect)
 
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glVertexPointer(2, GL_FLOAT, 0, coord_array);
-		glDrawArrays(GL_LINE_STRIP, 0, LINK_RESOL);
+		glDrawArrays(GL_LINE_STRIP, 0, LINK_RESOL + 1);
 		glDisableClientState(GL_VERTEX_ARRAY);
 
 		glDisable(GL_BLEND);

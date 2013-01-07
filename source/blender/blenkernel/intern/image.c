@@ -312,10 +312,6 @@ static void image_assign_ibuf(Image *ima, ImBuf *ibuf, int index, int frame)
 				break;
 
 		ibuf->index = index;
-		if (ima->flag & IMA_CM_PREDIVIDE)
-			ibuf->flags |= IB_cm_predivide;
-		else
-			ibuf->flags &= ~IB_cm_predivide;
 
 		/* this function accepts (link == NULL) */
 		BLI_insertlinkbefore(&ima->ibufs, link, ibuf);
@@ -552,6 +548,26 @@ int BKE_image_scale(Image *image, int width, int height)
 	return (ibuf != NULL);
 }
 
+static void image_init_color_management(Image *ima)
+{
+	ImBuf *ibuf;
+	char name[FILE_MAX];
+
+	BKE_image_user_file_path(NULL, ima, name);
+
+	/* will set input color space to image format default's */
+	ibuf = IMB_loadiffname(name, IB_test | IB_alphamode_detect, ima->colorspace_settings.name);
+
+	if (ibuf) {
+		if (ibuf->flags & IB_alphamode_premul)
+			ima->alpha_mode = IMA_ALPHA_PREMUL;
+		else
+			ima->alpha_mode = IMA_ALPHA_STRAIGHT;
+
+		IMB_freeImBuf(ibuf);
+	}
+}
+
 Image *BKE_image_load(const char *filepath)
 {
 	Image *ima;
@@ -578,6 +594,8 @@ Image *BKE_image_load(const char *filepath)
 
 	if (BLI_testextensie_array(filepath, imb_ext_movie))
 		ima->source = IMA_SRC_MOVIE;
+
+	image_init_color_management(ima);
 
 	return ima;
 }
@@ -666,7 +684,7 @@ static ImBuf *add_ibuf_size(unsigned int width, unsigned int height, const char 
 		/* both byte and float buffers are filling in sRGB space, need to linearize float buffer after BKE_image_buf_fill* functions */
 
 		IMB_buffer_float_from_float(rect_float, rect_float, ibuf->channels, IB_PROFILE_LINEAR_RGB, IB_PROFILE_SRGB,
-		                            ibuf->flags & IB_cm_predivide, ibuf->x, ibuf->y, ibuf->x, ibuf->x);
+		                            TRUE, ibuf->x, ibuf->y, ibuf->x, ibuf->x);
 	}
 
 	return ibuf;
@@ -1119,6 +1137,8 @@ char BKE_imtype_valid_depths(const char imtype)
 			return R_IMF_CHAN_DEPTH_10;
 		case R_IMF_IMTYPE_JP2:
 			return R_IMF_CHAN_DEPTH_8 | R_IMF_CHAN_DEPTH_12 | R_IMF_CHAN_DEPTH_16;
+		case R_IMF_IMTYPE_PNG:
+			return R_IMF_CHAN_DEPTH_8 | R_IMF_CHAN_DEPTH_16;
 		/* most formats are 8bit only */
 		default:
 			return R_IMF_CHAN_DEPTH_8;
@@ -1289,6 +1309,7 @@ void BKE_imformat_defaults(ImageFormatData *im_format)
 	memset(im_format, 0, sizeof(*im_format));
 	im_format->planes = R_IMF_PLANES_RGB;
 	im_format->imtype = R_IMF_IMTYPE_PNG;
+	im_format->depth = R_IMF_CHAN_DEPTH_8;
 	im_format->quality = 90;
 	im_format->compress = 90;
 
@@ -1313,8 +1334,12 @@ void BKE_imbuf_to_image_format(struct ImageFormatData *im_format, const ImBuf *i
 		im_format->imtype = R_IMF_IMTYPE_RADHDR;
 #endif
 
-	else if (ftype == PNG)
+	else if (ftype == PNG) {
 		im_format->imtype = R_IMF_IMTYPE_PNG;
+
+		if (custom_flags & PNG_16BIT)
+			im_format->depth = R_IMF_CHAN_DEPTH_16;
+	}
 
 #ifdef WITH_DDS
 	else if (ftype == DDS)
@@ -1847,8 +1872,12 @@ int BKE_imbuf_write(ImBuf *ibuf, const char *name, ImageFormatData *imf)
 	else if (ELEM5(imtype, R_IMF_IMTYPE_PNG, R_IMF_IMTYPE_FFMPEG, R_IMF_IMTYPE_H264, R_IMF_IMTYPE_THEORA, R_IMF_IMTYPE_XVID)) {
 		ibuf->ftype = PNG;
 
-		if (imtype == R_IMF_IMTYPE_PNG)
+		if (imtype == R_IMF_IMTYPE_PNG) {
+			if (imf->depth == R_IMF_CHAN_DEPTH_16)
+				ibuf->ftype |= PNG_16BIT;
+
 			ibuf->ftype |= compress;
+		}
 
 	}
 #ifdef WITH_DDS
@@ -1996,7 +2025,7 @@ int BKE_imbuf_write_stamp(Scene *scene, struct Object *camera, ImBuf *ibuf, cons
 
 
 static void do_makepicstring(char *string, const char *base, const char *relbase, int frame, const char imtype,
-							 const ImageFormatData *im_format, const short use_ext, const short use_frames)
+                             const ImageFormatData *im_format, const short use_ext, const short use_frames)
 {
 	if (string == NULL) return;
 	BLI_strncpy(string, base, FILE_MAX - 10);   /* weak assumption */
@@ -2333,7 +2362,7 @@ void BKE_image_backup_render(Scene *scene, Image *ima)
 static void image_create_multilayer(Image *ima, ImBuf *ibuf, int framenr)
 {
 	const char *colorspace = ima->colorspace_settings.name;
-	int predivide = ima->flag & IMA_CM_PREDIVIDE;
+	int predivide = ima->alpha_mode == IMA_ALPHA_PREMUL;
 
 	ima->rr = RE_MultilayerConvert(ibuf->userdata, colorspace, predivide, ibuf->x, ibuf->y);
 
@@ -2365,6 +2394,18 @@ static void image_initialize_after_load(Image *ima, ImBuf *ibuf)
 
 }
 
+static int imbuf_alpha_flags_for_image(Image *ima)
+{
+	int flag = 0;
+
+	if (ima->flag & IMA_IGNORE_ALPHA)
+		flag |= IB_ignore_alpha;
+	else if (ima->alpha_mode == IMA_ALPHA_PREMUL)
+		flag |= IB_alphamode_premul;
+
+	return flag;
+}
+
 static ImBuf *image_load_sequence_file(Image *ima, ImageUser *iuser, int frame)
 {
 	struct ImBuf *ibuf;
@@ -2379,8 +2420,7 @@ static ImBuf *image_load_sequence_file(Image *ima, ImageUser *iuser, int frame)
 	BKE_image_user_file_path(iuser, ima, name);
 
 	flag = IB_rect | IB_multilayer;
-	if (ima->flag & IMA_DO_PREMUL)
-		flag |= IB_premul;
+	flag |= imbuf_alpha_flags_for_image(ima);
 
 	/* read ibuf */
 	ibuf = IMB_loadiffname(name, flag, ima->colorspace_settings.name);
@@ -2539,15 +2579,14 @@ static ImBuf *image_load_image_file(Image *ima, ImageUser *iuser, int cfra)
 	/* is there a PackedFile with this image ? */
 	if (ima->packedfile) {
 		flag = IB_rect | IB_multilayer;
-		if (ima->flag & IMA_DO_PREMUL) flag |= IB_premul;
+		flag |= imbuf_alpha_flags_for_image(ima);
 
 		ibuf = IMB_ibImageFromMemory((unsigned char *)ima->packedfile->data, ima->packedfile->size, flag,
 		                             ima->colorspace_settings.name, "<packed data>");
 	}
 	else {
 		flag = IB_rect | IB_multilayer | IB_metadata;
-		if (ima->flag & IMA_DO_PREMUL)
-			flag |= IB_premul;
+		flag |= imbuf_alpha_flags_for_image(ima);
 
 		/* get the right string */
 		BKE_image_user_frame_calc(iuser, cfra, 0);
@@ -2766,15 +2805,6 @@ static ImBuf *image_get_render_result(Image *ima, ImageUser *iuser, void **lock_
 	BLI_unlock_thread(LOCK_COLORMANAGE);
 
 	ibuf->dither = dither;
-
-	if (iuser->scene->r.color_mgt_flag & R_COLOR_MANAGEMENT_PREDIVIDE) {
-		ibuf->flags |= IB_cm_predivide;
-		ima->flag |= IMA_CM_PREDIVIDE;
-	}
-	else {
-		ibuf->flags &= ~IB_cm_predivide;
-		ima->flag &= ~IMA_CM_PREDIVIDE;
-	}
 
 	ima->ok = IMA_OK_LOADED;
 
