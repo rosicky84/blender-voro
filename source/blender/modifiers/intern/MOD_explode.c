@@ -22,7 +22,8 @@
  *                 Ton Roosendaal,
  *                 Ben Batt,
  *                 Brecht Van Lommel,
- *                 Campbell Barton
+ *                 Campbell Barton,
+ *				   Martin Felke
  *
  * ***** END GPL LICENSE BLOCK *****
  *
@@ -66,6 +67,13 @@
 #include "DNA_material_types.h"
 #include "BKE_material.h"
 #include "DNA_gpencil_types.h"
+#include "../../editors/include/ED_object.h"
+#include "BKE_global.h"
+#include "../../editors/include/ED_physics.h"
+#include "BKE_main.h"
+#include "BKE_library.h"
+
+void updateMesh(VoronoiCell* cell, Object* ob);
 
 static void initData(ModifierData *md)
 {
@@ -92,6 +100,7 @@ static void initData(ModifierData *md)
 	emd->last_map_delay = 1;
 	emd->inner_material = NULL;
 	emd->point_source = eOwnParticles;
+	emd->last_point_source = eOwnParticles;
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -129,7 +138,15 @@ static void freeData(ModifierData *md)
     
     if ((emd->tempOb) && (emd->mode == eFractureMode_Cells))
     {
-        BKE_object_unlink(emd->tempOb);
+        //BKE_object_unlink(emd->tempOb);
+        //BKE_object_free(emd->tempOb);
+		//Scene* s = emd->modifier.scene;
+		//Base* bas = BKE_scene_base_find(s, emd->tempOb);
+		//ED_base_object_free_and_unlink(G.main, s, bas);
+		//DAG_id_type_tag(G.main, ID_OB);
+		//object_delete_check_glsl_update(emd->tempOb);
+		BKE_libblock_free_us(&(G.main->object), emd->tempOb);
+		BKE_object_unlink(emd->tempOb);
         BKE_object_free(emd->tempOb);
         emd->tempOb = NULL;
     }
@@ -191,6 +208,7 @@ static void copyData(ModifierData *md, ModifierData *target)
 	temd->last_map_delay = emd->last_map_delay;
 	temd->inner_material = emd->inner_material;
 	temd->point_source = emd->point_source;
+	temd->last_point_source = emd->last_point_source;
 }
 
 static int dependsOnTime(ModifierData *UNUSED(md)) 
@@ -1257,7 +1275,7 @@ static int getChildren(Scene* scene, Object* ob, Object* children)
 static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float **points)
 {
 	int totpoint = 0, totchildren = 0;
-	int fallback = FALSE;
+	//int fallback = FALSE;
 	Object* children = NULL;
 
 	if (emd->point_source & (eChildParticles | eChildVerts ))
@@ -1274,32 +1292,32 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 	if (emd->point_source & eChildParticles)
 	{
 		totpoint += points_from_particles(children, totchildren, scene, points , totpoint);
-		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
+		/*if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
 		{	// if no child particles available, return original geometry
 			totpoint += points_from_verts(ob, 1, points, totpoint);
 			fallback = TRUE;
-		}
+		}*/
 	}
 	
 	if (emd->point_source & eChildVerts)
 	{
 		totpoint += points_from_verts(children, totchildren, points, totpoint);
-		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
+		/*if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
 		{	// if no childverts available, return original geometry
 			totpoint += points_from_verts(ob, 1, points, totpoint);
 			fallback = TRUE;
-		}
+		}*/
 	}
 	
 	if (emd->point_source & eGreasePencil)
 	{
 		totpoint += points_from_greasepencil(ob, 1, points, totpoint);
 		
-		if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
+		/*if ((totpoint == 0) && (!(emd->point_source & eOwnVerts)) && (!fallback))
 		{	// if no greasepencil available, return original geometry
 			totpoint += points_from_verts(ob, 1, points, totpoint);
 			fallback = TRUE;
-		}
+		}*/
 	}
 	
 	if (emd->point_source & eOwnVerts)
@@ -1359,6 +1377,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     
 	float* points = NULL;
 	int totpoint = 0;
+	float loc[3], rot[4];
     
     if (emd->use_boolean)
     {
@@ -1401,6 +1420,10 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	{
 		points = malloc(sizeof(float));
 		totpoint = get_points(emd, emd->modifier.scene, ob, &points);
+		
+		//no points, cant do anything
+		if (totpoint == 0) return DM_to_bmesh(derivedData);
+		
 		if (emd->point_source == eOwnVerts)
 		{
 			//make container a little bigger ?
@@ -1497,6 +1520,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         emd->cells->data[emd->cells->count].vertco = malloc(sizeof(float));
         emd->cells->data[emd->cells->count].vertex_count = 0;
         emd->cells->data[emd->cells->count].particle_index = -1;
+		emd->cells->data[emd->cells->count].updateMesh = updateMesh;
         
         bmtemp = BM_mesh_create(&bm_mesh_chunksize_default);
         tempvert = malloc(sizeof(BMVert*));
@@ -1653,7 +1677,13 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						printf("Boolean Operation failed, using original mesh !\n");
 					}
 					
-					emd->cells->data[emd->cells->count].cell_mesh = CDDM_copy(boolresult);
+					//DM_ensure_tessface(boolresult);
+					CDDM_calc_edges_tessface(boolresult);
+					CDDM_tessfaces_to_faces(boolresult);
+					CDDM_calc_normals(boolresult);
+					DM_ensure_tessface(boolresult);
+					
+					emd->cells->data[emd->cells->count].cell_mesh = boolresult;// CDDM_copy(boolresult);
 					//CustomData_merge(&boolresult->faceData, &emd->cells->data[emd->cells->count].cell_mesh->faceData,
 					//				 CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, boolresult->numTessFaceData);
 					
@@ -1959,10 +1989,16 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	ParticleSystemModifierData *psmd = findPrecedingParticlesystem(ob, md);
     
     DerivedMesh *result = NULL, *d = NULL;
-	int i = 0, f, f_index = 0;
+	int i = 0, j = 0, f, f_index = 0, ml_index = 0;
 	MTFace* mtface = NULL;
 	MTFace* mtf = NULL;
-	MTFace t;
+	MTFace tf;
+	//MTFaces not used in BMesh/further modifier processing , so need to split to MTexPoly/MLoopUV
+	MTexPoly* mtps,  mtp;
+	MLoopUV* mluvs, mluv;
+	MLoop* mla = NULL, *ml;
+	MPoly* mpa = NULL, *mp;
+	float imat[4][4], oldobmat[4][4];
     
     if (psmd)
     {
@@ -1974,15 +2010,24 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                 (emd->last_part != psmd->psys->totpart) ||
                 (emd->last_bool != emd->use_boolean) ||
                 (emd->last_flip != emd->flip_normal) ||
+				(emd->last_point_source != emd->point_source) ||
                 (emd->use_cache == FALSE))
             {
+				invert_m4_m4(imat, ob->obmat);
+				copy_m4_m4(oldobmat, ob->obmat);
+				mult_m4_m4m4(ob->obmat, imat, ob->obmat); //neutralize obmat
+				
+				if (emd->cells) freeData(emd);
                 emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
 				
-				printf("%d cells missing\n", psmd->psys->totpart - emd->cells->count);
+				copy_m4_m4(ob->obmat, oldobmat); // restore obmat
+				printf("%d cells missing\n", psmd->psys->totpart - emd->cells->count); //use totpoint here
 			
                 emd->last_part = psmd->psys->totpart;
                 emd->last_bool = emd->use_boolean;
                 emd->last_flip = emd->flip_normal;
+				emd->last_point_source = emd->point_source;
+				
             }
             
             if (emd->refracture)
@@ -1991,8 +2036,10 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                     (emd->last_part != psmd->psys->totpart) ||
                     (emd->last_bool != emd->use_boolean) ||
                     (emd->last_flip != emd->flip_normal) ||
+					(emd->last_point_source != emd->point_source) ||
                     (emd->use_cache == FALSE))
                 {
+					if (emd->fracMesh) BM_mesh_free(emd->fracMesh);
                     emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
                 }
                 
@@ -2013,7 +2060,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				emd->last_map_delay = emd->map_delay;
 				createParticleTree(emd, psmd, md->scene, ob);
                 mapCellsToParticles(emd, psmd, md->scene, ob);
-                explodeCells(emd, psmd, md->scene, ob);
+				explodeCells(emd, psmd, md->scene, ob);
                 result = CDDM_from_bmesh(emd->fracMesh, TRUE);
 				
 				DM_ensure_tessface(result);
@@ -2024,14 +2071,19 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				if (emd->use_boolean)
 				{
 					mtface = malloc(sizeof(MTFace));
+					mtps = MEM_mallocN(sizeof(MTexPoly), "mtps");
+					mluvs = MEM_mallocN(sizeof(MLoopUV), "mluvs");
+					
 					f_index = 0;
-				//	Image* img;
+					ml_index = 0;
+					//Image* img;
 					
 					for (i = 0; i < emd->cells->count; i++)
 					{
 						d = emd->cells->data[i].cell_mesh;
 						//f = d->numTessFaceData;
 						
+						//if (mtf) MEM_freeN(mtf);
 						//hope this merges the MTFace data... successfully...
 						mtf = DM_get_tessface_data_layer(d, CD_MTFACE);
 						if (!mtf)
@@ -2042,29 +2094,86 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 							break;
 						}
 						
+						
+						/*CDDM_calc_edges_tessface(d);
+						CDDM_tessfaces_to_faces(d);
+						CDDM_calc_normals(d);
+						DM_ensure_tessface(d);*/
+						//if (mpa) MEM_freeN(mpa);
+						//if (mla) MEM_freeN(mla);
+						mpa = d->getPolyArray(d);
+						mla = d->getLoopArray(d);
+						
 						for (f = 0; f < d->numTessFaceData; f++)
 						{
 							mtface = realloc(mtface, sizeof(MTFace) * (f_index+1));
-							t = mtf[f];
+							tf = mtf[f];
 							
 							//setting image with the crowbar, hrm...
-							/*if (t.tpage)
+							/*if (tf.tpage)
 							{
-								img = t.tpage;
+								img = tf.tpage;
 							}
-							if (!t.tpage)
+							if (!tf.tpage)
 							{
-								//t.tpage = img;
+								//free(mtface);
+								//mtface = NULL;
+								//break;
+								tf.tpage = img;
 							}*/
-							mtface[f_index] = t;
+							mtps = MEM_reallocN(mtps, sizeof(MTexPoly) * (f_index+1));
+							mtp.tpage = tf.tpage;
+							mtp.flag = tf.flag;
+							mtp.mode = tf.mode;
+							mtp.tile = tf.tile;
+							mtp.transp = tf.transp;
+							mtps[f_index] = mtp;
+							
+							//assume facecount = polycount and faces = polys since only tris and quads available
+							//because of boolean
+							
+							mp = mpa + f; // get Polygon according to face index
+							mluvs = MEM_reallocN(mluvs, sizeof(MLoopUV)* (mp->totloop + ml_index));
+							
+							for (j = mp->loopstart; j < mp->loopstart + mp->totloop; j++)
+							{
+								//assume vertindex = uvindex, sigh, is that so ?, and no more than 4 loops !
+								ml = mla + j;
+								//mluv.flag = MLOOPUV_PINNED;//; MLOOPUV_EDGESEL;// MLOOPUV_VERTSEL;
+								mluv.uv[0] = tf.uv[j-mp->loopstart][0];
+								mluv.uv[1] = tf.uv[j-mp->loopstart][1];
+								mluvs[ml_index] = mluv;
+								ml_index++;
+							}
+							
+							mtface[f_index] = tf;
 							f_index++;
 						}
+						//MEM_freeN(mtf);
+						//MEM_freeN(mla);
+						//MEM_freeN(mpa);
+						
+						//if(!mtface)
+						//	break;
 					}
 					 
 					if (mtface)
 					{
-						CustomData_add_layer(&result->faceData, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
+						CustomData *fdata, *pdata, *ldata;
+						fdata = &result->faceData;
+						ldata = &result->loopData;
+						pdata = &result->polyData;
+						
+						CustomData_add_layer(fdata, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
+						CustomData_add_layer(pdata, CD_MTEXPOLY, CD_DUPLICATE, mtps, f_index);
+						CustomData_add_layer(ldata, CD_MLOOPUV, CD_DUPLICATE, mluvs, ml_index);
+				
 						free(mtface);
+						MEM_freeN(mtps);
+						MEM_freeN(mluvs);
+						//MEM_freeN(mtf);
+						//MEM_freeN(mla);
+						//MEM_freeN(mpa);
 					}
 				}
 				
@@ -2132,7 +2241,8 @@ ModifierTypeInfo modifierType_Explode = {
 	/* structName */        "ExplodeModifierData",
 	/* structSize */        sizeof(ExplodeModifierData),
 	/* type */              eModifierTypeType_Constructive,
-	/* flags */             eModifierTypeFlag_AcceptsMesh,
+	/* flags */             eModifierTypeFlag_AcceptsMesh |
+							eModifierTypeFlag_Single,	//more modifiers dont really make sense
 	/* copyData */          copyData,
 	/* deformVerts */       NULL,
 	/* deformMatrices */    NULL,
