@@ -2016,7 +2016,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				copy_m4_m4(oldobmat, ob->obmat);
 				mult_m4_m4m4(ob->obmat, imat, ob->obmat); //neutralize obmat
 				
-				if (emd->cells) freeData(emd);
+				if (emd->cells) BM_mesh_free(emd->fracMesh);
                 emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
 				
 				copy_m4_m4(ob->obmat, oldobmat); // restore obmat
