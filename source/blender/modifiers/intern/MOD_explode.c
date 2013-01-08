@@ -153,7 +153,7 @@ static void freeData(ModifierData *md)
         emd->tempOb = NULL;
     }
     
-    if (emd->mode == eFractureMode_Faces)
+    //if (emd->mode == eFractureMode_Faces)
     {
         if (emd->facepa) MEM_freeN(emd->facepa);
     }
@@ -1789,6 +1789,12 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 #endif
             emd->cells->count++;
         }
+		else
+		{
+			//EOF reached, free last vertco/vertices
+			MEM_freeN(emd->cells->data[emd->cells->count].vertco);
+			MEM_freeN(emd->cells->data[emd->cells->count].vertices);
+		}
         
         vert_index = 0;
         MEM_freeN(tempvert);
