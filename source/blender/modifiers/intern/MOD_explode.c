@@ -103,12 +103,9 @@ static void initData(ModifierData *md)
 	emd->last_point_source = eOwnParticles;
 }
 
-#ifdef WITH_MOD_VORONOI
-
-static void freeData(ModifierData *md)
+static void freeCells(ExplodeModifierData* emd)
 {
-	ExplodeModifierData *emd = (ExplodeModifierData *) md;
-    int c = 0, v = 0;
+	int c = 0;
 	
 	if ((emd->cells) && (emd->mode == eFractureMode_Cells))
     {
@@ -116,13 +113,11 @@ static void freeData(ModifierData *md)
         {
             for (c = 0; c < emd->cells->count; c++)
             {
-				/*for (v = 0; v < emd->cells->data[c].vertex_count; v++) {
-					MEM_freeN(emd->cells->data[c].vertices[v]);
-				}*/
 				MEM_freeN(emd->cells->data[c].vertco);
 				emd->cells->data[c].vertco = NULL;
 				MEM_freeN(emd->cells->data[c].vertices);
                 emd->cells->data[c].vertices = NULL;
+				DM_release(emd->cells->data[c].cell_mesh);
 				MEM_freeN(emd->cells->data[c].cell_mesh);
 				emd->cells->data[c].cell_mesh = NULL;
             }
@@ -134,6 +129,15 @@ static void freeData(ModifierData *md)
         MEM_freeN(emd->cells);
         emd->cells = NULL;
     }
+}
+
+#ifdef WITH_MOD_VORONOI
+
+static void freeData(ModifierData *md)
+{
+	ExplodeModifierData *emd = (ExplodeModifierData *) md;
+  
+	freeCells(emd);
     
     if ((emd->fracMesh) && (emd->mode == eFractureMode_Cells))
     {
@@ -143,13 +147,6 @@ static void freeData(ModifierData *md)
     
     if ((emd->tempOb) && (emd->mode == eFractureMode_Cells))
     {
-        //BKE_object_unlink(emd->tempOb);
-        //BKE_object_free(emd->tempOb);
-		//Scene* s = emd->modifier.scene;
-		//Base* bas = BKE_scene_base_find(s, emd->tempOb);
-		//ED_base_object_free_and_unlink(G.main, s, bas);
-		//DAG_id_type_tag(G.main, ID_OB);
-		//object_delete_check_glsl_update(emd->tempOb);
 		BKE_libblock_free_us(&(G.main->object), emd->tempOb);
 		BKE_object_unlink(emd->tempOb);
         BKE_object_free(emd->tempOb);
@@ -1508,6 +1505,11 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     //TODO: maybe put variable declarations at top of function ? C90 ?
     //TODO: check for setting in psys to volume
     //vert_index = 0;
+	
+	if (emd->cells)
+	{
+		freeCells(emd);
+	}
     
     emd->cells = MEM_mallocN(sizeof(VoronoiCells), "emd->cells");
     emd->cells->data = MEM_mallocN(sizeof(VoronoiCell), "emd->cells->data");
@@ -1600,14 +1602,14 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                     BM_face_normal_flip(bmtemp, face);
                 }
                 
-                MEM_freeN(faceedges);
-                MEM_freeN(faceverts);
-                MEM_freeN(facevert_indexes);
+               // MEM_freeN(faceedges);
+               // MEM_freeN(faceverts);
+               // MEM_freeN(facevert_indexes);
                 edge_index = 0;
                 face_index = 0;
-                faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
-                faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
-                facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
+                //faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+                //faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
+                //facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
             }
             else if ((c == 'f') || (feof(fp) != 0))
             {
@@ -1618,6 +1620,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 					int mat_index = 0;
                     dm = CDDM_from_bmesh(bmtemp, TRUE);
                     BM_mesh_free(bmtemp);
+					bmtemp = NULL;
 					
 					DM_ensure_tessface(derivedData);
 					CDDM_calc_edges_tessface(derivedData);
@@ -1667,20 +1670,25 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						//CustomData_merge(&derivedData->faceData, &dm->faceData, CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, derivedData->numTessFaceData);
 						
                         boolresult = NewBooleanDerivedMesh(dm, emd->tempOb, derivedData, ob, eBooleanModifierOp_Intersect);
-                        
+						
+						//if boolean fails, return original mesh, emit a warning
+						if (!boolresult)
+						{
+							boolresult = dm;
+							printf("Boolean Operation failed, using original mesh !\n");
+						}
+						else
+						{
+							DM_release(dm);
+							MEM_freeN(dm);
+						}
                     }
                     else
                     {
                         boolresult = dm;
                     }
                     
-					//if boolean fails, return original mesh, emit a warning
-                    if (!boolresult)
-					{
-						boolresult = dm;
-						printf("Boolean Operation failed, using original mesh !\n");
-					}
-					
+										
 					//DM_ensure_tessface(boolresult);
 					CDDM_calc_edges_tessface(boolresult);
 					CDDM_tessfaces_to_faces(boolresult);
@@ -1752,10 +1760,10 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                 
                 edge_index = 0;
                 face_index = 0;
-                MEM_freeN(faceedges);
-                MEM_freeN(faceverts);
-                faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
-                faceedges = MEM_mallocN(sizeof(BMEdge*), "faceverts");
+               // MEM_freeN(faceedges);
+               // MEM_freeN(faceverts);
+               // faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+               // faceedges = MEM_mallocN(sizeof(BMEdge*), "faceverts");
                 break;
             }
         }
@@ -1784,13 +1792,14 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         
         vert_index = 0;
         MEM_freeN(tempvert);
+		if (bmtemp) BM_mesh_free(bmtemp);
+		MEM_freeN(faceverts);
+		MEM_freeN(facevert_indexes);
+		MEM_freeN(faceedges);
     }
     
     fclose(fp);
     MEM_freeN(path);
-	MEM_freeN(faceverts);
-	MEM_freeN(facevert_indexes);
-	MEM_freeN(faceedges);
 	
 	printf("%d cells missing\n", totpoint - emd->cells->count); //use totpoint here
     
