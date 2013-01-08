@@ -4633,7 +4633,10 @@ static void direct_link_modifiers(FileData *fd, ListBase *lb)
 			
 			psmd->facepa = NULL;
 
+			//should all be regenerated
+			if (psmd->fracMesh) MEM_freeN(psmd->fracMesh);
             psmd->fracMesh = NULL;
+			if (psmd->cells) MEM_freeN(psmd->cells);
             psmd->cells = NULL;
             psmd->tempOb = NULL;
 			psmd->patree = NULL;

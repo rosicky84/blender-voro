@@ -108,7 +108,7 @@ static void initData(ModifierData *md)
 static void freeData(ModifierData *md)
 {
 	ExplodeModifierData *emd = (ExplodeModifierData *) md;
-    int c = 0;
+    int c = 0, v = 0;
 	
 	if ((emd->cells) && (emd->mode == eFractureMode_Cells))
     {
@@ -116,17 +116,22 @@ static void freeData(ModifierData *md)
         {
             for (c = 0; c < emd->cells->count; c++)
             {
-                free(emd->cells->data[c].vertices);
+				/*for (v = 0; v < emd->cells->data[c].vertex_count; v++) {
+					MEM_freeN(emd->cells->data[c].vertices[v]);
+				}*/
+				MEM_freeN(emd->cells->data[c].vertco);
+				emd->cells->data[c].vertco = NULL;
+				MEM_freeN(emd->cells->data[c].vertices);
                 emd->cells->data[c].vertices = NULL;
 				MEM_freeN(emd->cells->data[c].cell_mesh);
 				emd->cells->data[c].cell_mesh = NULL;
             }
             
-            free(emd->cells->data);
+            MEM_freeN(emd->cells->data);
             emd->cells->data = NULL;
         }
         
-        free(emd->cells);
+        MEM_freeN(emd->cells);
         emd->cells = NULL;
     }
     
@@ -1150,7 +1155,7 @@ static int points_from_verts(Object* ob, int totobj, float** points, int p_exist
 			Mesh* me = (Mesh*)ob[o].data;
 			for (v = 0; v < me->totvert; v++)
 			{
-				*points = realloc(*points, ((pt+1)*3)*sizeof(float));
+				*points = MEM_reallocN(*points, ((pt+1)*3)*sizeof(float));
 				
 				co[0] = me->mvert[v].co[0];
 				co[1] = me->mvert[v].co[1];
@@ -1193,7 +1198,7 @@ static int points_from_particles(Object* ob, int totobj, Scene* scene, float** p
 				for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
 				{
 					psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
-					*points = realloc(*points, ((pt+1)*3)* sizeof(float));
+					*points = MEM_reallocN(*points, ((pt+1)*3)* sizeof(float));
 					(*points)[pt*3] = birth.co[0];
 					(*points)[pt*3+1] = birth.co[1];
 					(*points)[pt*3+2] = birth.co[2];
@@ -1224,7 +1229,7 @@ static int points_from_greasepencil(Object* ob, int totobj, float** points, int 
 				{
 					for (p = 0; p < gps->totpoints; p++)
 					{
-						*points = realloc(*points, ((pt+1)*3)*sizeof(float));
+						*points = MEM_reallocN(*points, ((pt+1)*3)*sizeof(float));
 						(*points)[pt*3] = gps->points[p].x;
 						(*points)[pt*3+1] = gps->points[p].y;
 						(*points)[pt*3+2] = gps->points[p].z;
@@ -1263,7 +1268,7 @@ static int getChildren(Scene* scene, Object* ob, Object* children)
 	{
 		if (isChild(ob, base->object))
 		{
-			children = realloc(children, sizeof(Object) * (ctr+1));
+			children = MEM_reallocN(children, sizeof(Object) * (ctr+1));
 			children[ctr] = *(base->object);
 			ctr++;
 		}
@@ -1280,7 +1285,7 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 
 	if (emd->point_source & (eChildParticles | eChildVerts ))
 	{
-		children = malloc(sizeof(Object));
+		children = MEM_mallocN(sizeof(Object), "get_points->children");
 		totchildren += getChildren(scene, ob, children);
 	}
 	
@@ -1328,7 +1333,7 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 	
 	if (children)
 	{
-		free(children);
+		MEM_freeN(children);
 		children = NULL;
 	}
 	
@@ -1417,7 +1422,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	//choose from point sources here
 	if (!emd->refracture)
 	{
-		points = malloc(sizeof(float));
+		points = MEM_mallocN(sizeof(float), "points");
 		totpoint = get_points(emd, emd->modifier.scene, ob, &points);
 		
 		//no points, cant do anything
@@ -1467,7 +1472,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     //TODO: write results to temp file, ensure using the systems temp dir...
     // this prints out vertex positions and face indexes
     file = "test.out";
-    path = malloc((strlen(BLI_temporary_dir()) + strlen(file) + 2) * sizeof(char));
+    path = MEM_mallocN(((strlen(BLI_temporary_dir()) + strlen(file) + 2) * sizeof(char)), "path");
     path = strcpy(path, BLI_temporary_dir());
     fullpath = strcat(path, file);
     fp = fopen(fullpath, "w+");
@@ -1490,7 +1495,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	
 	if (points)
 	{
-		free(points);
+		MEM_freeN(points);
 		points = NULL;
 	}
 
@@ -1504,8 +1509,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
     //TODO: check for setting in psys to volume
     //vert_index = 0;
     
-    emd->cells = malloc(sizeof(VoronoiCells));
-    emd->cells->data = malloc(sizeof(VoronoiCell));
+    emd->cells = MEM_mallocN(sizeof(VoronoiCells), "emd->cells");
+    emd->cells->data = MEM_mallocN(sizeof(VoronoiCell), "emd->cells->data");
     emd->cells->count = 0;
     
     
@@ -1514,15 +1519,15 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         //printf("Reading line...\n");
         
         //store cell data: centroid and associated vertex coords
-        emd->cells->data = realloc(emd->cells->data, sizeof(VoronoiCell) * (emd->cells->count + 1));
-        emd->cells->data[emd->cells->count].vertices = malloc(sizeof(BMVert*));// (float*)malloc(3 * sizeof(float));
-        emd->cells->data[emd->cells->count].vertco = malloc(sizeof(float));
+        emd->cells->data = MEM_reallocN(emd->cells->data, sizeof(VoronoiCell) * (emd->cells->count + 1));
+        emd->cells->data[emd->cells->count].vertices = MEM_mallocN(sizeof(BMVert*), "vertices");// (float*)malloc(3 * sizeof(float));
+        emd->cells->data[emd->cells->count].vertco = MEM_mallocN(sizeof(float), "vertco");
         emd->cells->data[emd->cells->count].vertex_count = 0;
         emd->cells->data[emd->cells->count].particle_index = -1;
 		
 			
         bmtemp = BM_mesh_create(&bm_mesh_chunksize_default);
-        tempvert = malloc(sizeof(BMVert*));
+        tempvert = MEM_mallocN(sizeof(BMVert*), "tempvert");
         tempvert_index = 0;
         
         // Read in the cell data, each line in the output file represents a voronoi cell
@@ -1538,16 +1543,16 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
             mul_v3_m4v3(vco, imat, vco);
             
             
-            tempvert = realloc(tempvert, sizeof(BMVert*) * (tempvert_index + 1));
+            tempvert = MEM_reallocN(tempvert, sizeof(BMVert*) * (tempvert_index + 1));
             vert = BM_vert_create(bmtemp, vco, NULL, 0);
             tempvert[tempvert_index] = vert;
             
             tempvert_index++;
         }
         
-        faceverts = malloc(sizeof(BMVert*));
-        faceedges = malloc(sizeof(BMEdge*));
-        facevert_indexes = malloc(sizeof(int));
+        faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+        faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
+        facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
         
         face_index = 0;
         edge_index = 0;
@@ -1562,17 +1567,17 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                 fseek(fp, -sizeof(char), SEEK_CUR);
                 facevert_index = 0;
                 fscanf(fp, "%d", &facevert_index);
-                faceverts = realloc(faceverts, (face_index + 1) * sizeof(BMVert*));
+                faceverts = MEM_reallocN(faceverts, (face_index + 1) * sizeof(BMVert*));
                 // find vertices for each face, store indexes here
                 faceverts[face_index] = tempvert[facevert_index];//emd->cells->data[emd->cells->count].vertices[facevert_index];
                 
-                facevert_indexes = realloc(facevert_indexes, sizeof(int) * (face_index+1));
+                facevert_indexes = MEM_reallocN(facevert_indexes, sizeof(int) * (face_index+1));
                 facevert_indexes[face_index] = facevert_index;
                 
                 if (face_index > 0)
                 {
                     //argh, need to determine edges manually...
-                    faceedges = realloc(faceedges, (edge_index + 1) * sizeof(BMEdge*));
+                    faceedges = MEM_reallocN(faceedges, (edge_index + 1) * sizeof(BMEdge*));
                     edge = BM_edge_create(bmtemp, faceverts[face_index - 1], faceverts[face_index], NULL, 0);
                     faceedges[edge_index] = edge;
                     edge_index++;
@@ -1585,7 +1590,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
             else if ( c == ')')
             {
                 //end of face tuple, can create face now, but before create last edge to close the circle
-                faceedges = realloc(faceedges, (edge_index + 1) * sizeof(BMEdge*));
+                faceedges = MEM_reallocN(faceedges, (edge_index + 1) * sizeof(BMEdge*));
                 edge = BM_edge_create(bmtemp, faceverts[face_index-1], faceverts[0], NULL, 0);
                 faceedges[edge_index] = edge;
                 
@@ -1595,14 +1600,14 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                     BM_face_normal_flip(bmtemp, face);
                 }
                 
-                free(faceedges);
-                free(faceverts);
-                free(facevert_indexes);
+                MEM_freeN(faceedges);
+                MEM_freeN(faceverts);
+                MEM_freeN(facevert_indexes);
                 edge_index = 0;
                 face_index = 0;
-                faceverts = malloc(sizeof(BMVert*));
-                faceedges = malloc(sizeof(BMEdge*));
-                facevert_indexes = malloc(sizeof(int));
+                faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+                faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
+                facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
             }
             else if ((c == 'f') || (feof(fp) != 0))
             {
@@ -1690,7 +1695,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                     totedge = boolresult->getNumEdges(boolresult);
                     totface = boolresult->getNumTessFaces(boolresult);
                     
-                    localverts = malloc(sizeof(BMVert*) * totvert);
+                    localverts = MEM_mallocN(sizeof(BMVert*) * totvert, "localverts");
                     ed = boolresult->getEdgeArray(boolresult);
                     fa = boolresult->getTessFaceArray(boolresult);
                     
@@ -1699,7 +1704,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                         boolresult->getVertCo(boolresult, v, co);
                         
                         emd->cells->data[emd->cells->count].vertices =
-                        realloc(emd->cells->data[emd->cells->count].vertices, (vert_index + 1)* sizeof(BMVert));
+                        MEM_reallocN(emd->cells->data[emd->cells->count].vertices, (vert_index + 1)* sizeof(BMVert));
                         
                         emd->cells->data[emd->cells->count].vertex_count++;
                         
@@ -1712,7 +1717,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                         //store original coordinates for later re-use
                         
                         emd->cells->data[emd->cells->count].vertco =
-                        realloc(emd->cells->data[emd->cells->count].vertco, (vert_index + 1)* (3*sizeof(float)));
+                        MEM_reallocN(emd->cells->data[emd->cells->count].vertco, (vert_index + 1)* (3*sizeof(float)));
                         
                         emd->cells->data[emd->cells->count].vertco[3*vert_index] = vert->co[0];
                         emd->cells->data[emd->cells->count].vertco[3*vert_index+1] = vert->co[1];
@@ -1742,15 +1747,15 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
                     }
                     
                     
-                    free(localverts);
+                    MEM_freeN(localverts);
                 }
                 
                 edge_index = 0;
                 face_index = 0;
-                free(faceedges);
-                free(faceverts);
-                faceverts = malloc(sizeof(BMVert*));
-                faceedges = malloc(sizeof(BMEdge*));
+                MEM_freeN(faceedges);
+                MEM_freeN(faceverts);
+                faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+                faceedges = MEM_mallocN(sizeof(BMEdge*), "faceverts");
                 break;
             }
         }
@@ -1778,11 +1783,16 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
         }
         
         vert_index = 0;
-        free(tempvert);
+        MEM_freeN(tempvert);
     }
     
     fclose(fp);
-    free(path);
+    MEM_freeN(path);
+	MEM_freeN(faceverts);
+	MEM_freeN(facevert_indexes);
+	MEM_freeN(faceedges);
+	
+	printf("%d cells missing\n", totpoint - emd->cells->count); //use totpoint here
     
     return bm;
 }
@@ -2020,7 +2030,6 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
                 emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
 				
 				copy_m4_m4(ob->obmat, oldobmat); // restore obmat
-				printf("%d cells missing\n", psmd->psys->totpart - emd->cells->count); //use totpoint here
 			
                 emd->last_part = psmd->psys->totpart;
                 emd->last_bool = emd->use_boolean;
@@ -2069,7 +2078,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				
 				if (emd->use_boolean)
 				{
-					mtface = malloc(sizeof(MTFace));
+					mtface = MEM_mallocN(sizeof(MTFace), "mtface");
 					mtps = MEM_mallocN(sizeof(MTexPoly), "mtps");
 					mluvs = MEM_mallocN(sizeof(MLoopUV), "mluvs");
 					
@@ -2088,7 +2097,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						if (!mtf)
 						{
 							//argh, something went wrong, data will be missing...
-							free(mtface);
+							MEM_freeN(mtface);
 							mtface = NULL;
 							break;
 						}
@@ -2105,7 +2114,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						
 						for (f = 0; f < d->numTessFaceData; f++)
 						{
-							mtface = realloc(mtface, sizeof(MTFace) * (f_index+1));
+							mtface = MEM_reallocN(mtface, sizeof(MTFace) * (f_index+1));
 							tf = mtf[f];
 							
 							//setting image with the crowbar, hrm...
@@ -2167,7 +2176,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						CustomData_add_layer(pdata, CD_MTEXPOLY, CD_DUPLICATE, mtps, f_index);
 						CustomData_add_layer(ldata, CD_MLOOPUV, CD_DUPLICATE, mluvs, ml_index);
 				
-						free(mtface);
+						MEM_freeN(mtface);
 						MEM_freeN(mtps);
 						MEM_freeN(mluvs);
 						//MEM_freeN(mtf);
