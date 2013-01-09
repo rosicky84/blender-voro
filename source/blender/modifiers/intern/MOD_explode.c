@@ -1499,9 +1499,11 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 		MEM_freeN(points);
 		points = NULL;
 	}
-
-    
+	
+	
     bm = DM_to_bmesh(derivedData);
+	if (totpoint == 0)
+		return bm;
     
     //empty the mesh
     BM_mesh_clear(bm);
@@ -2085,15 +2087,19 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 				//BM_mesh_copy(emd->fracMesh); loses some faces too, hrm.
 				if (emd->map_delay != emd->last_map_delay) resetCells(emd);
 				emd->last_map_delay = emd->map_delay;
-				createParticleTree(emd, psmd, md->scene, ob);
-                mapCellsToParticles(emd, psmd, md->scene, ob);
-				explodeCells(emd, psmd, md->scene, ob);
+				if (emd->cells) {
+					createParticleTree(emd, psmd, md->scene, ob);
+					mapCellsToParticles(emd, psmd, md->scene, ob);
+					explodeCells(emd, psmd, md->scene, ob);
+				}
                 result = CDDM_from_bmesh(emd->fracMesh, TRUE);
 				
 				DM_ensure_tessface(result);
 				CDDM_calc_edges_tessface(result);
 				CDDM_tessfaces_to_faces(result);
 				CDDM_calc_normals(result);
+				
+				if (!emd->cells) return result;
 				
 				if (emd->use_boolean)
 				{
