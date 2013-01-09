@@ -318,7 +318,7 @@ void closest_on_tri_to_point_v3(float r[3], const float p[3],
 		return;
 	}
 	/* Check if P in edge region of AB, if so return projection of P onto AB */
-	vc = d1*d4 - d3*d2;
+	vc = d1 * d4 - d3 * d2;
 	if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
 		float v = d1 / (d1 - d3);
 		/* barycentric coordinates (1-v,v,0) */
@@ -335,7 +335,7 @@ void closest_on_tri_to_point_v3(float r[3], const float p[3],
 		return;
 	}
 	/* Check if P in edge region of AC, if so return projection of P onto AC */
-	vb = d5*d2 - d1*d6;
+	vb = d5 * d2 - d1 * d6;
 	if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
 		float w = d2 / (d2 - d6);
 		/* barycentric coordinates (1-w,0,w) */
@@ -343,7 +343,7 @@ void closest_on_tri_to_point_v3(float r[3], const float p[3],
 		return;
 	}
 	/* Check if P in edge region of BC, if so return projection of P onto BC */
-	va = d3*d6 - d5*d4;
+	va = d3 * d6 - d5 * d4;
 	if (va <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
 		float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
 		/* barycentric coordinates (0,1-w,w) */
@@ -2335,14 +2335,25 @@ void interp_weights_poly_v3(float *w, float v[][3], const int n, const float co[
 {
 	/* TODO: t1 and t2 overlap each iter, we could call this only once per iter and reuse previous value */
 	float totweight, t1, t2, len, *vmid, *vprev, *vnext;
-	int i;
+	int i, i_next, i_curr;
+	bool edge_interp = false;
 
 	totweight = 0.0f;
 
 	for (i = 0; i < n; i++) {
+		i_curr = i;
+		i_next = (i == n - 1) ? 0 : i + 1;
+
 		vmid = v[i];
 		vprev = (i == 0) ? v[n - 1] : v[i - 1];
-		vnext = (i == n - 1) ? v[0] : v[i + 1];
+		vnext = v[i_next];
+
+		/* Mark Mayer et al algorithm that is used here does not operate well if vertex is close
+		 * to borders of face. In that case, do simple linear interpolation between the two edge vertices */
+		if (dist_to_line_segment_v3(co, vmid, vnext) < 10 * FLT_EPSILON) {
+			edge_interp = true;
+			break;
+		}
 
 		t1 = mean_value_half_tan_v3(co, vprev, vmid);
 		t2 = mean_value_half_tan_v3(co, vmid, vnext);
@@ -2352,25 +2363,49 @@ void interp_weights_poly_v3(float *w, float v[][3], const int n, const float co[
 		totweight += w[i];
 	}
 
-	if (totweight != 0.0f) {
-		for (i = 0; i < n; i++) {
-			w[i] /= totweight;
+	if (edge_interp) {
+		float len_curr = len_v3v3(co, vmid);
+		float len_next = len_v3v3(co, vnext);
+		float edge_len = len_curr + len_next;
+		for (i = 0; i < n; i++)
+			w[i] = 0.0;
+
+		w[i_curr] = len_next / edge_len;
+		w[i_next] = len_curr / edge_len;
+	}
+	else {
+		if (totweight != 0.0f) {
+			for (i = 0; i < n; i++) {
+				w[i] /= totweight;
+			}
 		}
 	}
 }
+
 
 void interp_weights_poly_v2(float *w, float v[][2], const int n, const float co[2])
 {
 	/* TODO: t1 and t2 overlap each iter, we could call this only once per iter and reuse previous value */
 	float totweight, t1, t2, len, *vmid, *vprev, *vnext;
-	int i;
+	int i, i_next, i_curr;
+	bool edge_interp = false;
 
 	totweight = 0.0f;
 
 	for (i = 0; i < n; i++) {
+		i_curr = i;
+		i_next = (i == n - 1) ? 0 : i + 1;
+
 		vmid = v[i];
 		vprev = (i == 0) ? v[n - 1] : v[i - 1];
-		vnext = (i == n - 1) ? v[0] : v[i + 1];
+		vnext = v[i_next];
+
+		/* Mark Mayer et al algorithm that is used here does not operate well if vertex is close
+		 * to borders of face. In that case, do simple linear interpolation between the two edge vertices */
+		if (dist_to_line_segment_v2(co, vmid, vnext) < 10 * FLT_EPSILON) {
+			edge_interp = true;
+			break;
+		}
 
 		t1 = mean_value_half_tan_v2(co, vprev, vmid);
 		t2 = mean_value_half_tan_v2(co, vmid, vnext);
@@ -2380,9 +2415,21 @@ void interp_weights_poly_v2(float *w, float v[][2], const int n, const float co[
 		totweight += w[i];
 	}
 
-	if (totweight != 0.0f) {
-		for (i = 0; i < n; i++) {
-			w[i] /= totweight;
+	if (edge_interp) {
+		float len_curr = len_v2v2(co, vmid);
+		float len_next = len_v2v2(co, vnext);
+		float edge_len = len_curr + len_next;
+		for (i = 0; i < n; i++)
+			w[i] = 0.0;
+
+		w[i_curr] = len_next / edge_len;
+		w[i_next] = len_curr / edge_len;
+	}
+	else {
+		if (totweight != 0.0f) {
+			for (i = 0; i < n; i++) {
+				w[i] /= totweight;
+			}
 		}
 	}
 }

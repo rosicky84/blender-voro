@@ -2629,6 +2629,19 @@ void CustomData_bmesh_set_layer_n(CustomData *data, void *block, int n, void *so
 		memcpy(dest, source, typeInfo->size);
 }
 
+/**
+ * \param src_blocks must be pointers to the data, offset by layer->offset already.
+ */
+void CustomData_bmesh_interp_n(CustomData *data, void **src_blocks, const float *weights,
+                               const float *sub_weights, int count, void *dest_block, int n)
+{
+	CustomDataLayer *layer = &data->layers[n];
+	const LayerTypeInfo *typeInfo = layerType_getInfo(layer->type);
+
+	typeInfo->interp(src_blocks, weights, sub_weights, count,
+	                 (char *)dest_block + layer->offset);
+}
+
 void CustomData_bmesh_interp(CustomData *data, void **src_blocks, const float *weights,
                              const float *sub_weights, int count, void *dest_block)
 {
@@ -2651,36 +2664,47 @@ void CustomData_bmesh_interp(CustomData *data, void **src_blocks, const float *w
 			for (j = 0; j < count; ++j) {
 				sources[j] = (char *)src_blocks[j] + layer->offset;
 			}
-
-			typeInfo->interp(sources, weights, sub_weights, count,
-			                 (char *)dest_block + layer->offset);
+			CustomData_bmesh_interp_n(data, sources, weights, sub_weights, count, dest_block, i);
 		}
 	}
 
 	if (count > SOURCE_BUF_SIZE) MEM_freeN(sources);
 }
 
-void CustomData_bmesh_set_default(CustomData *data, void **block)
+static void CustomData_bmesh_set_default_n(CustomData *data, void **block, int n)
 {
 	const LayerTypeInfo *typeInfo;
+	int offset = data->layers[n].offset;
+
+	typeInfo = layerType_getInfo(data->layers[n].type);
+
+	if (typeInfo->set_default) {
+		typeInfo->set_default((char *)*block + offset, 1);
+	}
+	else {
+		memset((char *)*block + offset, 0, typeInfo->size);
+	}
+}
+
+void CustomData_bmesh_set_default(CustomData *data, void **block)
+{
 	int i;
 
 	if (*block == NULL)
 		CustomData_bmesh_alloc_block(data, block);
 
 	for (i = 0; i < data->totlayer; ++i) {
-		int offset = data->layers[i].offset;
-
-		typeInfo = layerType_getInfo(data->layers[i].type);
-
-		if (typeInfo->set_default)
-			typeInfo->set_default((char *)*block + offset, 1);
-		else memset((char *)*block + offset, 0, typeInfo->size);
+		CustomData_bmesh_set_default_n(data, block, i);
 	}
 }
 
+/**
+ * \param use_default_init initializes data which can't be copied,
+ * typically you'll want to use this if the BM_xxx create function
+ * is called with BM_CREATE_SKIP_CD flag
+ */
 void CustomData_to_bmesh_block(const CustomData *source, CustomData *dest,
-                               int src_index, void **dest_block)
+                               int src_index, void **dest_block, bool use_default_init)
 {
 	const LayerTypeInfo *typeInfo;
 	int dest_i, src_i, src_offset;
@@ -2696,11 +2720,14 @@ void CustomData_to_bmesh_block(const CustomData *source, CustomData *dest,
 		 * (this should work because layers are ordered by type)
 		 */
 		while (dest_i < dest->totlayer && dest->layers[dest_i].type < source->layers[src_i].type) {
+			if (use_default_init) {
+				CustomData_bmesh_set_default_n(dest, dest_block, dest_i);
+			}
 			dest_i++;
 		}
 
 		/* if there are no more dest layers, we're done */
-		if (dest_i >= dest->totlayer) return;
+		if (dest_i >= dest->totlayer) break;
 
 		/* if we found a matching layer, copy the data */
 		if (dest->layers[dest_i].type == source->layers[src_i].type) {
@@ -2720,6 +2747,13 @@ void CustomData_to_bmesh_block(const CustomData *source, CustomData *dest,
 			 * we don't want to copy all source layers to the same dest, so
 			 * increment dest_i
 			 */
+			dest_i++;
+		}
+	}
+
+	if (use_default_init) {
+		while (dest_i < dest->totlayer) {
+			CustomData_bmesh_set_default_n(dest, dest_block, dest_i);
 			dest_i++;
 		}
 	}
