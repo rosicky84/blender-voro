@@ -60,18 +60,19 @@
 #include "MOD_util.h"
 
 #include "MOD_boolean_util.h"
-#include "../../../../extern/voro++/src/c_interface.hh"
 #include "bmesh.h"
 #include "BLI_path_util.h"
 #include <ctype.h>
 #include "DNA_material_types.h"
 #include "BKE_material.h"
 #include "DNA_gpencil_types.h"
-#include "../../editors/include/ED_object.h"
 #include "BKE_global.h"
-#include "../../editors/include/ED_physics.h"
 #include "BKE_main.h"
 #include "BKE_library.h"
+
+#ifdef WITH_MOD_VORONOI
+#  include "../../../../extern/voro++/src/c_interface.hh"
+#endif
 
 void updateMesh(VoronoiCell* cell, Object* ob);
 
@@ -79,21 +80,21 @@ static void initData(ModifierData *md)
 {
 	ExplodeModifierData *emd = (ExplodeModifierData *) md;
 
-    emd->mode = eFractureMode_Faces;
-    emd->use_boolean = FALSE;
-    emd->use_cache = MOD_VORONOI_USECACHE;
-    emd->refracture = FALSE;
-    emd->fracMesh = NULL;
-    emd->tempOb = NULL;
-    emd->cells = NULL;
-    emd->flip_normal = FALSE;
-    
-    emd->last_part = 0;
-    emd->last_bool = FALSE;
-    emd->last_flip = FALSE;
-    
+	emd->mode = eFractureMode_Faces;
+	emd->use_boolean = FALSE;
+	emd->use_cache = MOD_VORONOI_USECACHE;
+	emd->refracture = FALSE;
+	emd->fracMesh = NULL;
+	emd->tempOb = NULL;
+	emd->cells = NULL;
+	emd->flip_normal = FALSE;
+
+	emd->last_part = 0;
+	emd->last_bool = FALSE;
+	emd->last_flip = FALSE;
+
 	emd->facepa = NULL;
-    emd->emit_continuously = FALSE;
+	emd->emit_continuously = FALSE;
 	emd->flag |= eExplodeFlag_Unborn + eExplodeFlag_Alive + eExplodeFlag_Dead;
 	emd->patree = NULL;
 	emd->map_delay = 1;
@@ -107,28 +108,25 @@ static void freeCells(ExplodeModifierData* emd)
 {
 	int c = 0;
 	
-	if ((emd->cells) && (emd->mode == eFractureMode_Cells))
-    {
-        if (emd->cells->data)
-        {
-            for (c = 0; c < emd->cells->count; c++)
-            {
+	if ((emd->cells) && (emd->mode == eFractureMode_Cells)) {
+		if (emd->cells->data) {
+			for (c = 0; c < emd->cells->count; c++) {
 				MEM_freeN(emd->cells->data[c].vertco);
 				emd->cells->data[c].vertco = NULL;
 				MEM_freeN(emd->cells->data[c].vertices);
-                emd->cells->data[c].vertices = NULL;
+				emd->cells->data[c].vertices = NULL;
 				DM_release(emd->cells->data[c].cell_mesh);
 				MEM_freeN(emd->cells->data[c].cell_mesh);
 				emd->cells->data[c].cell_mesh = NULL;
-            }
-            
-            MEM_freeN(emd->cells->data);
-            emd->cells->data = NULL;
-        }
-        
-        MEM_freeN(emd->cells);
-        emd->cells = NULL;
-    }
+			}
+
+			MEM_freeN(emd->cells->data);
+			emd->cells->data = NULL;
+		}
+
+		MEM_freeN(emd->cells);
+		emd->cells = NULL;
+	}
 }
 
 #ifdef WITH_MOD_VORONOI
@@ -136,36 +134,33 @@ static void freeCells(ExplodeModifierData* emd)
 static void freeData(ModifierData *md)
 {
 	ExplodeModifierData *emd = (ExplodeModifierData *) md;
-  
+
 	freeCells(emd);
-    
-    if ((emd->fracMesh) && (emd->mode == eFractureMode_Cells))
-    {
-        BM_mesh_free(emd->fracMesh);
-        emd->fracMesh = NULL;
-    }
-    
-    if ((emd->tempOb) && (emd->mode == eFractureMode_Cells))
-    {
+
+	if ((emd->fracMesh) && (emd->mode == eFractureMode_Cells)) {
+		BM_mesh_free(emd->fracMesh);
+		emd->fracMesh = NULL;
+	}
+
+	if ((emd->tempOb) && (emd->mode == eFractureMode_Cells)) {
 		BKE_libblock_free_us(&(G.main->object), emd->tempOb);
 		BKE_object_unlink(emd->tempOb);
-        BKE_object_free(emd->tempOb);
-        emd->tempOb = NULL;
-    }
-    
-    //if (emd->mode == eFractureMode_Faces)
-    {
-        if (emd->facepa) MEM_freeN(emd->facepa);
-    }
-	
-	if (emd->patree)
+		BKE_object_free(emd->tempOb);
+		emd->tempOb = NULL;
+	}
+
+	//if (emd->mode == eFractureMode_Faces)
 	{
+		if (emd->facepa) MEM_freeN(emd->facepa);
+	}
+	
+	if (emd->patree) {
 		BLI_kdtree_free(emd->patree);
 		emd->patree = NULL;
 	}
 	
-	if (emd->inner_material)
-	{	//will be freed by walk/foreachIDLink ?
+	if (emd->inner_material) {
+		//will be freed by walk/foreachIDLink ?
 		emd->inner_material = NULL;
 	}
 
@@ -1342,48 +1337,47 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 // create the voronoi cell faces inside the existing mesh
 static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSystemModifierData* psmd, ExplodeModifierData* emd)
 {
-    void* container = NULL;
-    void* particle_order = NULL;
-    float min[3], max[3];
-    int p = 0;
-    ParticleData *pa = NULL;
-    //ParticleSimulationData sim = {NULL};
-    //ParticleKey birth;
-    float co[3], vco[3];//, cfra;
-    BMesh *bm = NULL, *bmtemp = NULL;
-    
-    FILE *fp = NULL;
-    int vert_index = 0;
-    int read = 0;
-    BMVert **faceverts = NULL, **tempvert = NULL, *vert = NULL, **localverts = NULL;
-    BMEdge **faceedges = NULL, *edge = NULL;
-    int *facevert_indexes = NULL;
-    int face_index = 0;
-    int edge_index = 0;
-    char c;
-    int facevert_index = 0;
-    BMFace *face = NULL;
-    
-    DerivedMesh *dm = NULL, *boolresult = NULL;
-    MEdge* ed = NULL;
-    MFace* fa = NULL;
-    
-    int totvert, totedge, totface;
-    int v, e, f;
-    int tempvert_index;
-    const char *file;
-    char *path, *fullpath;
-    float imat[4][4];
-    float theta = 0.0f;
+	void* container = NULL;
+	void* particle_order = NULL;
+	float min[3], max[3];
+	int p = 0;
+	ParticleData *pa = NULL;
+	//ParticleSimulationData sim = {NULL};
+	//ParticleKey birth;
+	float co[3], vco[3];//, cfra;
+	BMesh *bm = NULL, *bmtemp = NULL;
+
+	FILE *fp = NULL;
+	int vert_index = 0;
+	int read = 0;
+	BMVert **faceverts = NULL, **tempvert = NULL, *vert = NULL, **localverts = NULL;
+	BMEdge **faceedges = NULL, *edge = NULL;
+	int *facevert_indexes = NULL;
+	int face_index = 0;
+	int edge_index = 0;
+	char c;
+	int facevert_index = 0;
+	BMFace *face = NULL;
+
+	DerivedMesh *dm = NULL, *boolresult = NULL;
+	MEdge* ed = NULL;
+	MFace* fa = NULL;
+
+	int totvert, totedge, totface;
+	int v, e, f;
+	int tempvert_index;
+	const char *file;
+	char *path, *fullpath;
+	float imat[4][4];
+	float theta = 0.0f;
 	int n_size = 8;
-    
+
 	float* points = NULL;
 	int totpoint = 0;
-    
-    if (emd->use_boolean)
-    {
+
+	if (emd->use_boolean) {
 		//theta = -0.01f;
-        //make container bigger for boolean case,so cube and container dont have equal size which can lead to boolean errors
+		//make container bigger for boolean case,so cube and container dont have equal size which can lead to boolean errors
 		if (emd->flip_normal)
 		{	//cubes usually need flip_normal, so enable theta only here, otherwise it will be subtracted
 			theta = 0.01f;
@@ -1392,25 +1386,24 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 		INIT_MINMAX(min, max);
 		BKE_mesh_minmax(ob->data, min, max);
 	}
-    else
-	{
+	else {
 		//con = voronoi.domain(xmin-theta,xmax+theta,ymin-theta,ymax+theta,zmin-theta,zmax+theta,nx,ny,nz,False, False, False, particles)
 		dm_minmax(derivedData, min, max);
 	}
-    
-    //use global coordinates for container
-    mul_v3_m4v3(min, ob->obmat, min);
-    mul_v3_m4v3(max, ob->obmat, max);
-    
-    
-    // printf("Container: %f;%f;%f;%f;%f;%f \n", min[0], max[0], min[1], max[1], min[2], max[2]);
-    //TODO: maybe support simple shapes without boolean, but eh...
-    container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
-                              n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart); //add number of parts here!
-   // particle_order = particle_order_new();
-    
-    
-   /* sim.scene = emd->modifier.scene;
+
+	//use global coordinates for container
+	mul_v3_m4v3(min, ob->obmat, min);
+	mul_v3_m4v3(max, ob->obmat, max);
+
+
+	// printf("Container: %f;%f;%f;%f;%f;%f \n", min[0], max[0], min[1], max[1], min[2], max[2]);
+	//TODO: maybe support simple shapes without boolean, but eh...
+	container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
+	                          n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart); //add number of parts here!
+	// particle_order = particle_order_new();
+
+
+	/* sim.scene = emd->modifier.scene;
 	sim.ob = ob;
 	sim.psys = psmd->psys;
 	sim.psmd = psmd;*/
@@ -1423,8 +1416,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 		totpoint = get_points(emd, emd->modifier.scene, ob, &points);
 		
 		//no points, cant do anything
-		if (totpoint == 0)
-		{
+		if (totpoint == 0) {
 			MEM_freeN(points);
 			return DM_to_bmesh(derivedData);
 		}
@@ -1435,7 +1427,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 			if (!emd->use_boolean) theta = 0.01f;
 		}
 		container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
-								  n_size, n_size, n_size, FALSE, FALSE, FALSE, totpoint);
+		                          n_size, n_size, n_size, FALSE, FALSE, FALSE, totpoint);
 		
 		for (p = 0; p < totpoint; p++)
 		{
@@ -1448,7 +1440,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	else
 	{
 		container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
-								  n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart);
+		                          n_size, n_size, n_size, FALSE, FALSE, FALSE, psmd->psys->totpart);
 		for (p = 0, pa = psmd->psys->particles; p < psmd->psys->totpart; p++, pa++)
 		{
 			co[0] = pa->state.co[0];
@@ -1469,30 +1461,30 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 			container_put(container, particle_order, p, co[0], co[1], co[2]);
 		}
 	}
-    
-    //TODO: write results to temp file, ensure using the systems temp dir...
-    // this prints out vertex positions and face indexes
-    file = "test.out";
-    path = MEM_mallocN(((strlen(BLI_temporary_dir()) + strlen(file) + 2) * sizeof(char)), "path");
-    path = strcpy(path, BLI_temporary_dir());
-    fullpath = strcat(path, file);
-    fp = fopen(fullpath, "w+");
-    
-    
-    //this triggers computation of the voronoi cells and produces the desired data:
-    //see voro++ homepage for detailed description
-    //TODO: insert link here
-    
-    // %P global vertex coordinates of voronoi vertices
-    // v  the vertex -> face delimiter
-    // %t the indexes to the cell vertices, describes which vertices build each face
-    // f  the face -> centroid section delimiter
-    // %C the centroid of the voronoi cell, used to find nearest particle in createCellpa
-    
-    //%i the particle index
-    container_print_custom(container, "%P v %t f %C", fp);
-    fflush(fp);
-    rewind(fp);
+
+	//TODO: write results to temp file, ensure using the systems temp dir...
+	// this prints out vertex positions and face indexes
+	file = "test.out";
+	path = MEM_mallocN(((strlen(BLI_temporary_dir()) + strlen(file) + 2) * sizeof(char)), "path");
+	path = strcpy(path, BLI_temporary_dir());
+	fullpath = strcat(path, file);
+	fp = fopen(fullpath, "w+");
+
+
+	//this triggers computation of the voronoi cells and produces the desired data:
+	//see voro++ homepage for detailed description
+	//TODO: insert link here
+
+	// %P global vertex coordinates of voronoi vertices
+	// v  the vertex -> face delimiter
+	// %t the indexes to the cell vertices, describes which vertices build each face
+	// f  the face -> centroid section delimiter
+	// %C the centroid of the voronoi cell, used to find nearest particle in createCellpa
+
+	//%i the particle index
+	container_print_custom(container, "%P v %t f %C", fp);
+	fflush(fp);
+	rewind(fp);
 	
 	if (points)
 	{
@@ -1501,131 +1493,128 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	}
 	
 	
-    bm = DM_to_bmesh(derivedData);
+	bm = DM_to_bmesh(derivedData);
 	if (totpoint == 0)
 		return bm;
-    
-    //empty the mesh
-    BM_mesh_clear(bm);
-    
-    //TODO: maybe put variable declarations at top of function ? C90 ?
-    //TODO: check for setting in psys to volume
-    //vert_index = 0;
+
+	//empty the mesh
+	BM_mesh_clear(bm);
+
+	//TODO: maybe put variable declarations at top of function ? C90 ?
+	//TODO: check for setting in psys to volume
+	//vert_index = 0;
 	
 	if (emd->cells)
 	{
 		freeCells(emd);
 	}
-    
-    emd->cells = MEM_mallocN(sizeof(VoronoiCells), "emd->cells");
-    emd->cells->data = MEM_mallocN(sizeof(VoronoiCell), "emd->cells->data");
-    emd->cells->count = 0;
-    
-    
-    while(feof(fp) == 0)
-    {
-        //printf("Reading line...\n");
-        
-        //store cell data: centroid and associated vertex coords
-        emd->cells->data = MEM_reallocN(emd->cells->data, sizeof(VoronoiCell) * (emd->cells->count + 1));
-        emd->cells->data[emd->cells->count].vertices = MEM_mallocN(sizeof(BMVert*), "vertices");// (float*)malloc(3 * sizeof(float));
-        emd->cells->data[emd->cells->count].vertco = MEM_mallocN(sizeof(float), "vertco");
-        emd->cells->data[emd->cells->count].vertex_count = 0;
-        emd->cells->data[emd->cells->count].particle_index = -1;
+
+	emd->cells = MEM_mallocN(sizeof(VoronoiCells), "emd->cells");
+	emd->cells->data = MEM_mallocN(sizeof(VoronoiCell), "emd->cells->data");
+	emd->cells->count = 0;
+
+
+	while(feof(fp) == 0)
+	{
+		//printf("Reading line...\n");
+
+		//store cell data: centroid and associated vertex coords
+		emd->cells->data = MEM_reallocN(emd->cells->data, sizeof(VoronoiCell) * (emd->cells->count + 1));
+		emd->cells->data[emd->cells->count].vertices = MEM_mallocN(sizeof(BMVert*), "vertices");// (float*)malloc(3 * sizeof(float));
+		emd->cells->data[emd->cells->count].vertco = MEM_mallocN(sizeof(float), "vertco");
+		emd->cells->data[emd->cells->count].vertex_count = 0;
+		emd->cells->data[emd->cells->count].particle_index = -1;
 		
-			
-        bmtemp = BM_mesh_create(&bm_mesh_chunksize_default);
-        tempvert = MEM_mallocN(sizeof(BMVert*), "tempvert");
-        tempvert_index = 0;
-        
-        // Read in the cell data, each line in the output file represents a voronoi cell
-        while (1)
-        {
-            // Read in the vertex coordinates of the cell vertices
-            read = fscanf(fp, "(%f,%f,%f) ", &vco[0], &vco[1], &vco[2]);
-            if (read < 3) break;
-            
-            //back to object space
-            
-            invert_m4_m4(imat, ob->obmat);
-            mul_v3_m4v3(vco, imat, vco);
-            
-            
-            tempvert = MEM_reallocN(tempvert, sizeof(BMVert*) * (tempvert_index + 1));
-            vert = BM_vert_create(bmtemp, vco, NULL, 0);
-            tempvert[tempvert_index] = vert;
-            
-            tempvert_index++;
-        }
-        
-        faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
-        faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
-        facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
-        
-        face_index = 0;
-        edge_index = 0;
-        
-        while(1)
-        {
-            // printf ("Reading faces...\n");
-            c = fgetc(fp);
-            if (isdigit(c)) //maybe atoi !! (ascii value to int ?)
-            {
-                //put/seek back and better do fscanf !
-                fseek(fp, -sizeof(char), SEEK_CUR);
-                facevert_index = 0;
-                fscanf(fp, "%d", &facevert_index);
-                faceverts = MEM_reallocN(faceverts, (face_index + 1) * sizeof(BMVert*));
-                // find vertices for each face, store indexes here
-                faceverts[face_index] = tempvert[facevert_index];//emd->cells->data[emd->cells->count].vertices[facevert_index];
-                
-                facevert_indexes = MEM_reallocN(facevert_indexes, sizeof(int) * (face_index+1));
-                facevert_indexes[face_index] = facevert_index;
-                
-                if (face_index > 0)
-                {
-                    //argh, need to determine edges manually...
-                    faceedges = MEM_reallocN(faceedges, (edge_index + 1) * sizeof(BMEdge*));
-                    edge = BM_edge_create(bmtemp, faceverts[face_index - 1], faceverts[face_index], NULL, 0);
-                    faceedges[edge_index] = edge;
-                    edge_index++;
-                    
-                }
-                
-                face_index++;
-                
-            }
-            else if ( c == ')')
-            {
-                //end of face tuple, can create face now, but before create last edge to close the circle
-                faceedges = MEM_reallocN(faceedges, (edge_index + 1) * sizeof(BMEdge*));
-                edge = BM_edge_create(bmtemp, faceverts[face_index-1], faceverts[0], NULL, 0);
-                faceedges[edge_index] = edge;
-                
-                face = BM_face_create(bmtemp, faceverts, faceedges, face_index, 0);
-                if (emd->flip_normal)
-                {
-                    BM_face_normal_flip(bmtemp, face);
-                }
-                
-               // MEM_freeN(faceedges);
-               // MEM_freeN(faceverts);
-               // MEM_freeN(facevert_indexes);
-                edge_index = 0;
-                face_index = 0;
-                //faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
-                //faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
-                //facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
-            }
-            else if ((c == 'f') || (feof(fp) != 0))
-            {
-                if (c == 'f')
-                {
-                    //Intersection, use elements from temporary per-cell bmeshes and write to global bmesh, which
-                    //is passed around and whose vertices are manipulated directly.
+
+		bmtemp = BM_mesh_create(&bm_mesh_chunksize_default);
+		tempvert = MEM_mallocN(sizeof(BMVert*), "tempvert");
+		tempvert_index = 0;
+
+		// Read in the cell data, each line in the output file represents a voronoi cell
+		while (1)
+		{
+			// Read in the vertex coordinates of the cell vertices
+			read = fscanf(fp, "(%f,%f,%f) ", &vco[0], &vco[1], &vco[2]);
+			if (read < 3) break;
+
+			//back to object space
+
+			invert_m4_m4(imat, ob->obmat);
+			mul_v3_m4v3(vco, imat, vco);
+
+
+			tempvert = MEM_reallocN(tempvert, sizeof(BMVert*) * (tempvert_index + 1));
+			vert = BM_vert_create(bmtemp, vco, NULL, 0);
+			tempvert[tempvert_index] = vert;
+
+			tempvert_index++;
+		}
+
+		faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+		faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
+		facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
+
+		face_index = 0;
+		edge_index = 0;
+
+		while(1)
+		{
+			// printf ("Reading faces...\n");
+			c = fgetc(fp);
+			if (isdigit(c)) //maybe atoi !! (ascii value to int ?)
+			{
+				//put/seek back and better do fscanf !
+				fseek(fp, -sizeof(char), SEEK_CUR);
+				facevert_index = 0;
+				fscanf(fp, "%d", &facevert_index);
+				faceverts = MEM_reallocN(faceverts, (face_index + 1) * sizeof(BMVert*));
+				// find vertices for each face, store indexes here
+				faceverts[face_index] = tempvert[facevert_index];//emd->cells->data[emd->cells->count].vertices[facevert_index];
+
+				facevert_indexes = MEM_reallocN(facevert_indexes, sizeof(int) * (face_index+1));
+				facevert_indexes[face_index] = facevert_index;
+
+				if (face_index > 0) {
+					//argh, need to determine edges manually...
+					faceedges = MEM_reallocN(faceedges, (edge_index + 1) * sizeof(BMEdge*));
+					edge = BM_edge_create(bmtemp, faceverts[face_index - 1], faceverts[face_index], NULL, 0);
+					faceedges[edge_index] = edge;
+					edge_index++;
+
+				}
+
+				face_index++;
+
+			}
+			else if ( c == ')') {
+				//end of face tuple, can create face now, but before create last edge to close the circle
+				faceedges = MEM_reallocN(faceedges, (edge_index + 1) * sizeof(BMEdge*));
+				edge = BM_edge_create(bmtemp, faceverts[face_index-1], faceverts[0], NULL, 0);
+				faceedges[edge_index] = edge;
+
+				face = BM_face_create(bmtemp, faceverts, faceedges, face_index, 0);
+				if (emd->flip_normal) {
+					BM_face_normal_flip(bmtemp, face);
+				}
+
+				// MEM_freeN(faceedges);
+				// MEM_freeN(faceverts);
+				// MEM_freeN(facevert_indexes);
+				edge_index = 0;
+				face_index = 0;
+				//faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+				//faceedges = MEM_mallocN(sizeof(BMEdge*), "faceedges");
+				//facevert_indexes = MEM_mallocN(sizeof(int), "facevert_indexes");
+			}
+			else if ((c == 'f') || (feof(fp) != 0))
+			{
+				if (c == 'f')
+				{
+					//Intersection, use elements from temporary per-cell bmeshes and write to global bmesh, which
+					//is passed around and whose vertices are manipulated directly.
 					int mat_index = 0;
-                    dm = CDDM_from_bmesh(bmtemp, TRUE);
-                    BM_mesh_free(bmtemp);
+					dm = CDDM_from_bmesh(bmtemp, TRUE);
+					BM_mesh_free(bmtemp);
 					bmtemp = NULL;
 					
 					DM_ensure_tessface(derivedData);
@@ -1637,24 +1626,24 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 					CDDM_calc_edges_tessface(dm);
 					CDDM_tessfaces_to_faces(dm);
 					CDDM_calc_normals(dm);
-                    
-                    if (emd->use_boolean)
-                    {
-                        //put temp bmesh to temp object ? Necessary ? Seems so.
-                        //TODO: maybe get along without temp object ?
-                        if (!emd->tempOb)
-                        {
-                            emd->tempOb = BKE_object_add_only_object(OB_MESH, "Intersect");
+
+					if (emd->use_boolean)
+					{
+						//put temp bmesh to temp object ? Necessary ? Seems so.
+						//TODO: maybe get along without temp object ?
+						if (!emd->tempOb)
+						{
+							emd->tempOb = BKE_object_add_only_object(OB_MESH, "Intersect");
 							//emd->tempOb = BKE_object_add(emd->modifier.scene, OB_MESH);
-                        }
-                        
-                        if (!emd->tempOb->data)
-                        {
-                            emd->tempOb->data = BKE_object_obdata_add_from_type(OB_MESH);
+						}
+
+						if (!emd->tempOb->data)
+						{
+							emd->tempOb->data = BKE_object_obdata_add_from_type(OB_MESH);
 							//object_add_material_slot(emd->tempOb);
-                        }
-                        
-                        
+						}
+
+
 						//assign inner material to temp Object
 						if (emd->inner_material)
 						{
@@ -1671,11 +1660,11 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						}
 						
 						DM_to_mesh(dm, emd->tempOb->data, emd->tempOb);
-                        copy_m4_m4(emd->tempOb->obmat, ob->obmat);
+						copy_m4_m4(emd->tempOb->obmat, ob->obmat);
 						
 						//CustomData_merge(&derivedData->faceData, &dm->faceData, CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, derivedData->numTessFaceData);
 						
-                        boolresult = NewBooleanDerivedMesh(dm, emd->tempOb, derivedData, ob, eBooleanModifierOp_Intersect);
+						boolresult = NewBooleanDerivedMesh(dm, emd->tempOb, derivedData, ob, eBooleanModifierOp_Intersect);
 						
 						//if boolean fails, return original mesh, emit a warning
 						if (!boolresult)
@@ -1688,13 +1677,13 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 							DM_release(dm);
 							MEM_freeN(dm);
 						}
-                    }
-                    else
-                    {
-                        boolresult = dm;
-                    }
-                    
-										
+					}
+					else
+					{
+						boolresult = dm;
+					}
+
+
 					//DM_ensure_tessface(boolresult);
 					CDDM_calc_edges_tessface(boolresult);
 					CDDM_tessfaces_to_faces(boolresult);
@@ -1705,117 +1694,117 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 					//CustomData_merge(&boolresult->faceData, &emd->cells->data[emd->cells->count].cell_mesh->faceData,
 					//				 CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, boolresult->numTessFaceData);
 					
-                    totvert = boolresult->getNumVerts(boolresult);
-                    totedge = boolresult->getNumEdges(boolresult);
-                    totface = boolresult->getNumTessFaces(boolresult);
-                    
-                    localverts = MEM_mallocN(sizeof(BMVert*) * totvert, "localverts");
-                    ed = boolresult->getEdgeArray(boolresult);
-                    fa = boolresult->getTessFaceArray(boolresult);
-                    
-                    for (v = 0; v < totvert; v++)
-                    {
-                        boolresult->getVertCo(boolresult, v, co);
-                        
-                        emd->cells->data[emd->cells->count].vertices =
-                        MEM_reallocN(emd->cells->data[emd->cells->count].vertices, (vert_index + 1)* sizeof(BMVert));
-                        
-                        emd->cells->data[emd->cells->count].vertex_count++;
-                        
-                        
-                        vert = BM_vert_create(bm, co, NULL, 0);
-                        localverts[v] = vert;
-                        
-                        emd->cells->data[emd->cells->count].vertices[vert_index] = vert;
-                        
-                        //store original coordinates for later re-use
-                        
-                        emd->cells->data[emd->cells->count].vertco =
-                        MEM_reallocN(emd->cells->data[emd->cells->count].vertco, (vert_index + 1)* (3*sizeof(float)));
-                        
-                        emd->cells->data[emd->cells->count].vertco[3*vert_index] = vert->co[0];
-                        emd->cells->data[emd->cells->count].vertco[3*vert_index+1] = vert->co[1];
-                        emd->cells->data[emd->cells->count].vertco[3*vert_index+2] = vert->co[2];
-                        
-                        vert_index++;
-                    }
-                    
-                    for (e = 0; e < totedge; e++)
-                    {
-                        BM_edge_create(bm, localverts[ed[e].v1], localverts[ed[e].v2], NULL, 0);
-                    }
-                    
-                    for (f = 0; f < totface; f++)
-                    {
-                        if ((fa[f].v4 > 0) && (fa[f].v4 < totvert))
-                        {   //create quad
-                            face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], localverts[fa[f].v4], NULL, 0);
+					totvert = boolresult->getNumVerts(boolresult);
+					totedge = boolresult->getNumEdges(boolresult);
+					totface = boolresult->getNumTessFaces(boolresult);
+
+					localverts = MEM_mallocN(sizeof(BMVert*) * totvert, "localverts");
+					ed = boolresult->getEdgeArray(boolresult);
+					fa = boolresult->getTessFaceArray(boolresult);
+
+					for (v = 0; v < totvert; v++)
+					{
+						boolresult->getVertCo(boolresult, v, co);
+
+						emd->cells->data[emd->cells->count].vertices =
+						        MEM_reallocN(emd->cells->data[emd->cells->count].vertices, (vert_index + 1)* sizeof(BMVert));
+
+						emd->cells->data[emd->cells->count].vertex_count++;
+
+
+						vert = BM_vert_create(bm, co, NULL, 0);
+						localverts[v] = vert;
+
+						emd->cells->data[emd->cells->count].vertices[vert_index] = vert;
+
+						//store original coordinates for later re-use
+
+						emd->cells->data[emd->cells->count].vertco =
+						        MEM_reallocN(emd->cells->data[emd->cells->count].vertco, (vert_index + 1)* (3*sizeof(float)));
+
+						emd->cells->data[emd->cells->count].vertco[3*vert_index] = vert->co[0];
+						emd->cells->data[emd->cells->count].vertco[3*vert_index+1] = vert->co[1];
+						emd->cells->data[emd->cells->count].vertco[3*vert_index+2] = vert->co[2];
+
+						vert_index++;
+					}
+
+					for (e = 0; e < totedge; e++)
+					{
+						BM_edge_create(bm, localverts[ed[e].v1], localverts[ed[e].v2], NULL, 0);
+					}
+
+					for (f = 0; f < totface; f++)
+					{
+						if ((fa[f].v4 > 0) && (fa[f].v4 < totvert))
+						{   //create quad
+							face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], localverts[fa[f].v4], NULL, 0);
 							face->mat_nr = fa[f].mat_nr;
-				
-                        }
-                        else
-                        {   //triangle only
-                            face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], NULL, NULL, 0);
+
+						}
+						else
+						{   //triangle only
+							face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], NULL, NULL, 0);
 							face->mat_nr = fa[f].mat_nr;
-                        }
-                    }
-                    
-                    
-                    MEM_freeN(localverts);
-                }
-                
-                edge_index = 0;
-                face_index = 0;
-               // MEM_freeN(faceedges);
-               // MEM_freeN(faceverts);
-               // faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
-               // faceedges = MEM_mallocN(sizeof(BMEdge*), "faceverts");
-                break;
-            }
-        }
-        
-        //read centroid
-        fscanf(fp, " %f %f %f", &emd->cells->data[emd->cells->count].centroid[0],
-               &emd->cells->data[emd->cells->count].centroid[1],
-               &emd->cells->data[emd->cells->count].centroid[2]);
+						}
+					}
+
+
+					MEM_freeN(localverts);
+				}
+
+				edge_index = 0;
+				face_index = 0;
+				// MEM_freeN(faceedges);
+				// MEM_freeN(faceverts);
+				// faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
+				// faceedges = MEM_mallocN(sizeof(BMEdge*), "faceverts");
+				break;
+			}
+		}
+
+		//read centroid
+		fscanf(fp, " %f %f %f", &emd->cells->data[emd->cells->count].centroid[0],
+		        &emd->cells->data[emd->cells->count].centroid[1],
+		        &emd->cells->data[emd->cells->count].centroid[2]);
 		
 		invert_m4_m4(imat, ob->obmat);
 		mul_m4_v3(imat, emd->cells->data[emd->cells->count].centroid);
 		
-        //skip newline
-        if (feof(fp) == 0)
-        {
-            
+		//skip newline
+		if (feof(fp) == 0)
+		{
+
 #ifdef _WIN32
-            //skip \r\n
-            fseek(fp, 2*sizeof(char), SEEK_CUR);
+			//skip \r\n
+			fseek(fp, 2*sizeof(char), SEEK_CUR);
 #else
-            //skip \n
-            fseek(fp, sizeof(char), SEEK_CUR);
+			//skip \n
+			fseek(fp, sizeof(char), SEEK_CUR);
 #endif
-            emd->cells->count++;
-        }
+			emd->cells->count++;
+		}
 		else
 		{
 			//EOF reached, free last vertco/vertices
 			MEM_freeN(emd->cells->data[emd->cells->count].vertco);
 			MEM_freeN(emd->cells->data[emd->cells->count].vertices);
 		}
-        
-        vert_index = 0;
-        MEM_freeN(tempvert);
+
+		vert_index = 0;
+		MEM_freeN(tempvert);
 		if (bmtemp) BM_mesh_free(bmtemp);
 		MEM_freeN(faceverts);
 		MEM_freeN(facevert_indexes);
 		MEM_freeN(faceedges);
-    }
-    
-    fclose(fp);
-    MEM_freeN(path);
+	}
+
+	fclose(fp);
+	MEM_freeN(path);
 	
 	printf("%d cells missing\n", totpoint - emd->cells->count); //use totpoint here
-    
-    return bm;
+
+	return bm;
 }
 
 static void createParticleTree(ExplodeModifierData *emd, ParticleSystemModifierData *psmd, Scene* scene, Object* ob)
@@ -1863,45 +1852,39 @@ static void mapCellsToParticles(ExplodeModifierData *emd, ParticleSystemModifier
 {
 	ParticleSystem *psys = psmd->psys;
 	float center[3];
-	int p = 0, c; 
-    // if voronoi: need to set centroids of cells to nearest particle, apply same(?) matrix to a group of verts
+	int p = 0, c;
+	// if voronoi: need to set centroids of cells to nearest particle, apply same(?) matrix to a group of verts
 	float cfra;
 	cfra = BKE_scene_frame_get(scene);
-    
-    for(c = 0; c < emd->cells->count; c++)
-    {
-        center[0] = emd->cells->data[c].centroid[0];
-        center[1] = emd->cells->data[c].centroid[1];
-        center[2] = emd->cells->data[c].centroid[2];
-        
+
+	for(c = 0; c < emd->cells->count; c++) {
+		center[0] = emd->cells->data[c].centroid[0];
+		center[1] = emd->cells->data[c].centroid[1];
+		center[2] = emd->cells->data[c].centroid[2];
+
 		//centroids were stored in object space, go to global space (particles are in global space)
 		mul_m4_v3(ob->obmat, center);
-        p = BLI_kdtree_find_nearest(emd->patree, center, NULL, NULL);
-        
-		if (emd->emit_continuously)
-		{
-			if (ELEM3(psys->particles[p].alive, PARS_ALIVE, PARS_DYING, PARS_DEAD))
-			{
+		p = BLI_kdtree_find_nearest(emd->patree, center, NULL, NULL);
+
+		if (emd->emit_continuously) {
+			if (ELEM3(psys->particles[p].alive, PARS_ALIVE, PARS_DYING, PARS_DEAD)) {
 				emd->cells->data[c].particle_index = p;
 			}
-			else
-			{
+			else {
 				emd->cells->data[c].particle_index = -1;
 			}
 		}
-        else
-        {
-			if ((emd->cells->data[c].particle_index == -1) && (cfra > (psys->part->sta + emd->map_delay)))
-			{
+		else {
+			if ((emd->cells->data[c].particle_index == -1) && (cfra > (psys->part->sta + emd->map_delay))) {
 				//map once, with delay, the larger the delay, the more smaller chunks !
 				emd->cells->data[c].particle_index = p;
 			}
 		}
-    }
+	}
 }
 
 static void explodeCells(ExplodeModifierData *emd,
-                           ParticleSystemModifierData *psmd, Scene *scene, Object *ob)
+                         ParticleSystemModifierData *psmd, Scene *scene, Object *ob)
 {
 	ParticleSimulationData sim = {NULL};
 	ParticleData *pa = NULL, *pars = psmd->psys->particles;
@@ -1909,48 +1892,48 @@ static void explodeCells(ExplodeModifierData *emd,
 	float imat[4][4];
 	float rot[4];
 	int totpart = 0;
-    int i, j, p;
-    
-    totpart = psmd->psys->totpart;
-    
+	int i, j, p;
+
+	totpart = psmd->psys->totpart;
+
 	sim.scene = scene;
 	sim.ob = ob;
 	sim.psys = psmd->psys;
 	sim.psmd = psmd;
-    
-    if (emd->cells == NULL)
-    {
-        return;
-    }
-    
-    /* getting back to object space */ // do i need this ?
-    invert_m4_m4(imat, ob->obmat);
-    psmd->psys->lattice = psys_get_lattice(&sim);
-    
-    //create a new mesh aka "explode" from new vertex positions. use bmesh for that now.
-    
-    //since we dont have real access to tessfaces we can deal with from our cells, need to recreate the edges
-    //and faces now the bmesh way. Or ... simply move the verts ? and recreate the DerivedMesh.
-    
-    //but... need the Verts objects... hopefully global indexes are the same as in DerivedMesh, if not, need to deal with BMesh there too.
-    
-    for (i = 0; i < emd->cells->count; i++)
-    {
-        p = emd->cells->data[i].particle_index;
-        if ((p >= 0) && (p < totpart))
-        {
-            pa = pars + p;
+
+	if (emd->cells == NULL)
+	{
+		return;
+	}
+
+	/* getting back to object space */ // do i need this ?
+	invert_m4_m4(imat, ob->obmat);
+	psmd->psys->lattice = psys_get_lattice(&sim);
+
+	//create a new mesh aka "explode" from new vertex positions. use bmesh for that now.
+
+	//since we dont have real access to tessfaces we can deal with from our cells, need to recreate the edges
+	//and faces now the bmesh way. Or ... simply move the verts ? and recreate the DerivedMesh.
+
+	//but... need the Verts objects... hopefully global indexes are the same as in DerivedMesh, if not, need to deal with BMesh there too.
+
+	for (i = 0; i < emd->cells->count; i++)
+	{
+		p = emd->cells->data[i].particle_index;
+		if ((p >= 0) && (p < totpart))
+		{
+			pa = pars + p;
 		}
-        
-        for (j = 0; j < emd->cells->data[i].vertex_count; j++)
-        {
-            // BMVert *vert = BM_vert_at_index(bm, ind);
-            BMVert* vert = emd->cells->data[i].vertices[j];
-            
-            //reset to original coords // stored at fracture time
-            vert->co[0] = emd->cells->data[i].vertco[j*3];
-            vert->co[1] = emd->cells->data[i].vertco[j*3+1];
-            vert->co[2] = emd->cells->data[i].vertco[j*3+2];
+
+		for (j = 0; j < emd->cells->data[i].vertex_count; j++)
+		{
+			// BMVert *vert = BM_vert_at_index(bm, ind);
+			BMVert* vert = emd->cells->data[i].vertices[j];
+
+			//reset to original coords // stored at fracture time
+			vert->co[0] = emd->cells->data[i].vertco[j*3];
+			vert->co[1] = emd->cells->data[i].vertco[j*3+1];
+			vert->co[2] = emd->cells->data[i].vertco[j*3+2];
 			
 			if ((p < 0) || (p > totpart-1) || ((!emd->emit_continuously) && (pa->alive == PARS_UNBORN)))
 			{
@@ -1958,46 +1941,46 @@ static void explodeCells(ExplodeModifierData *emd,
 			}
 			
 			//do recalc here ! what about uv maps and such.... ? let boolean (initially) handle this, but
-            //i HOPE vertex movement will update the uvs as well... or bust
-            
-            //particle CACHE causes lots of problems with this kind of calculation.
-            psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
-           // psys_particle_on_emitter(psmd, psmd->psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
-            
-            //birth.time = cfra;
-            //psys_get_particle_state(&sim, p, &birth, 1);
-            //birth = pa->prev_state;
-            state = pa->state;
-            
-            //vertco = vert->co;
-            mul_m4_v3(ob->obmat, vert->co);
-            sub_v3_v3(vert->co, birth.co);
-            
-            /* apply rotation, size & location */
-            //only if defined, means if checked in psys
-            if (psmd->psys->part->flag & PART_ROTATIONS)
-            {
-                sub_qt_qtqt(rot, state.rot, birth.rot);
-                mul_qt_v3(rot, vert->co);
-            }
-            
-            //TODO: maybe apply size flag, alive / unborn / dead flags
-            //  if (emd->flag & eExplodeFlag_PaSize)
-            //      mul_v3_fl(vert->co, pa->size);
-            
-            add_v3_v3(vert->co, state.co);
-            
-            mul_m4_v3(imat, vert->co);
-            
-        }
-    }
-    
-    if (psmd->psys->lattice) {
-        end_latt_deform(psmd->psys->lattice);
-        psmd->psys->lattice = NULL;
-    }
-    
-    //return bm;
+			//i HOPE vertex movement will update the uvs as well... or bust
+
+			//particle CACHE causes lots of problems with this kind of calculation.
+			psys_get_birth_coordinates(&sim, pa, &birth, 0, 0);
+			// psys_particle_on_emitter(psmd, psmd->psys->part->from, pa->num, pa->num_dmcache, pa->fuv, pa->foffset, co, NULL, NULL, NULL, NULL, NULL);
+
+			//birth.time = cfra;
+			//psys_get_particle_state(&sim, p, &birth, 1);
+			//birth = pa->prev_state;
+			state = pa->state;
+
+			//vertco = vert->co;
+			mul_m4_v3(ob->obmat, vert->co);
+			sub_v3_v3(vert->co, birth.co);
+
+			/* apply rotation, size & location */
+			//only if defined, means if checked in psys
+			if (psmd->psys->part->flag & PART_ROTATIONS)
+			{
+				sub_qt_qtqt(rot, state.rot, birth.rot);
+				mul_qt_v3(rot, vert->co);
+			}
+
+			//TODO: maybe apply size flag, alive / unborn / dead flags
+			//  if (emd->flag & eExplodeFlag_PaSize)
+			//      mul_v3_fl(vert->co, pa->size);
+
+			add_v3_v3(vert->co, state.co);
+
+			mul_m4_v3(imat, vert->co);
+
+		}
+	}
+
+	if (psmd->psys->lattice) {
+		end_latt_deform(psmd->psys->lattice);
+		psmd->psys->lattice = NULL;
+	}
+
+	//return bm;
 }
 
 static void resetCells(ExplodeModifierData *emd)
@@ -2017,8 +2000,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	DerivedMesh *dm = derivedData;
 	ExplodeModifierData *emd = (ExplodeModifierData *) md;
 	ParticleSystemModifierData *psmd = findPrecedingParticlesystem(ob, md);
-    
-    DerivedMesh *result = NULL, *d = NULL;
+
+	DerivedMesh *result = NULL, *d = NULL;
 	int i = 0, j = 0, f, f_index = 0, ml_index = 0;
 	MTFace* mtface = NULL;
 	MTFace* mtf = NULL;
@@ -2029,61 +2012,61 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	MLoop* mla = NULL, *ml;
 	MPoly* mpa = NULL, *mp;
 	float imat[4][4], oldobmat[4][4];
-    
-    if (psmd)
-    {
-        if (emd->mode == eFractureMode_Cells)
-        {
+
+	if (psmd)
+	{
+		if (emd->mode == eFractureMode_Cells)
+		{
 #ifdef WITH_MOD_VORONOI
-            
-            if ((emd->cells == NULL) ||
-                (emd->last_part != psmd->psys->totpart) ||
-                (emd->last_bool != emd->use_boolean) ||
-                (emd->last_flip != emd->flip_normal) ||
-				(emd->last_point_source != emd->point_source) ||
-                (emd->use_cache == FALSE))
-            {
+
+			if ((emd->cells == NULL) ||
+			    (emd->last_part != psmd->psys->totpart) ||
+			    (emd->last_bool != emd->use_boolean) ||
+			    (emd->last_flip != emd->flip_normal) ||
+			    (emd->last_point_source != emd->point_source) ||
+			    (emd->use_cache == FALSE))
+			{
 				invert_m4_m4(imat, ob->obmat);
 				copy_m4_m4(oldobmat, ob->obmat);
 				mult_m4_m4m4(ob->obmat, imat, ob->obmat); //neutralize obmat
 				
 				if (emd->cells) BM_mesh_free(emd->fracMesh);
-                emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
+				emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
 				
 				copy_m4_m4(ob->obmat, oldobmat); // restore obmat
-			
-                emd->last_part = psmd->psys->totpart;
-                emd->last_bool = emd->use_boolean;
-                emd->last_flip = emd->flip_normal;
+
+				emd->last_part = psmd->psys->totpart;
+				emd->last_bool = emd->use_boolean;
+				emd->last_flip = emd->flip_normal;
 				emd->last_point_source = emd->point_source;
 				
-            }
-            
-            if (emd->refracture)
-            {
-                if ((emd->cells == NULL) ||
-                    (emd->last_part != psmd->psys->totpart) ||
-                    (emd->last_bool != emd->use_boolean) ||
-                    (emd->last_flip != emd->flip_normal) ||
-					(emd->last_point_source != emd->point_source) ||
-                    (emd->use_cache == FALSE))
-                {
+			}
+
+			if (emd->refracture)
+			{
+				if ((emd->cells == NULL) ||
+				    (emd->last_part != psmd->psys->totpart) ||
+				    (emd->last_bool != emd->use_boolean) ||
+				    (emd->last_flip != emd->flip_normal) ||
+				    (emd->last_point_source != emd->point_source) ||
+				    (emd->use_cache == FALSE))
+				{
 					if (emd->fracMesh) BM_mesh_free(emd->fracMesh);
-                    emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
-                }
-                
-                emd->last_part = psmd->psys->totpart;
-                emd->last_bool = emd->use_boolean;
-                emd->last_flip = emd->flip_normal;
-                
-                result = CDDM_from_bmesh(emd->fracMesh, TRUE);
-                BM_mesh_free(emd->fracMesh);
-                emd->fracMesh = NULL;
-                return result;
-                
-            }
-            else
-            {
+					emd->fracMesh = fractureToCells(ob, derivedData, psmd, emd);
+				}
+
+				emd->last_part = psmd->psys->totpart;
+				emd->last_bool = emd->use_boolean;
+				emd->last_flip = emd->flip_normal;
+
+				result = CDDM_from_bmesh(emd->fracMesh, TRUE);
+				BM_mesh_free(emd->fracMesh);
+				emd->fracMesh = NULL;
+				return result;
+
+			}
+			else
+			{
 				//BM_mesh_copy(emd->fracMesh); loses some faces too, hrm.
 				if (emd->map_delay != emd->last_map_delay) resetCells(emd);
 				emd->last_map_delay = emd->map_delay;
@@ -2092,7 +2075,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 					mapCellsToParticles(emd, psmd, md->scene, ob);
 					explodeCells(emd, psmd, md->scene, ob);
 				}
-                result = CDDM_from_bmesh(emd->fracMesh, TRUE);
+				result = CDDM_from_bmesh(emd->fracMesh, TRUE);
 				
 				DM_ensure_tessface(result);
 				CDDM_calc_edges_tessface(result);
@@ -2191,7 +2174,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						//if(!mtface)
 						//	break;
 					}
-					 
+
 					if (mtface)
 					{
 						CustomData *fdata, *pdata, *ldata;
@@ -2202,7 +2185,7 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						CustomData_add_layer(fdata, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
 						CustomData_add_layer(pdata, CD_MTEXPOLY, CD_DUPLICATE, mtps, f_index);
 						CustomData_add_layer(ldata, CD_MLOOPUV, CD_DUPLICATE, mluvs, ml_index);
-				
+
 						MEM_freeN(mtface);
 						MEM_freeN(mtps);
 						MEM_freeN(mluvs);
@@ -2212,52 +2195,51 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 					}
 				}
 				
-                return result;
-            }
+				return result;
+			}
 #else
-            emd->mode = eFractureMode_Faces;
-            return derivedData;
+			emd->mode = eFractureMode_Faces;
+			return derivedData;
 #endif
-        }
+		}
 
-        
-        else if (emd->mode == eFractureMode_Faces)
-        {
-            ParticleSystem *psys = psmd->psys;
-            DM_ensure_tessface(dm); /* BMESH - UNTIL MODIFIER IS UPDATED FOR MPoly */
 
-            if (psys == NULL || psys->totpart == 0) return derivedData;
-            if (psys->part == NULL || psys->particles == NULL) return derivedData;
-            if (psmd->dm == NULL) return derivedData;
+		else if (emd->mode == eFractureMode_Faces) {
+			ParticleSystem *psys = psmd->psys;
+			DM_ensure_tessface(dm); /* BMESH - UNTIL MODIFIER IS UPDATED FOR MPoly */
 
-            /* 1. find faces to be exploded if needed */
-            if (emd->facepa == NULL ||
-                psmd->flag & eParticleSystemFlag_Pars ||
-                emd->flag & eExplodeFlag_CalcFaces ||
-                MEM_allocN_len(emd->facepa) / sizeof(int) != dm->getNumTessFaces(dm))
-            {
-                if (psmd->flag & eParticleSystemFlag_Pars)
-                    psmd->flag &= ~eParticleSystemFlag_Pars;
-                
-                if (emd->flag & eExplodeFlag_CalcFaces)
-                    emd->flag &= ~eExplodeFlag_CalcFaces;
+			if (psys == NULL || psys->totpart == 0) return derivedData;
+			if (psys->part == NULL || psys->particles == NULL) return derivedData;
+			if (psmd->dm == NULL) return derivedData;
 
-                createFacepa(emd, psmd, derivedData);
-            }
-            /* 2. create new mesh */
-            if (emd->flag & eExplodeFlag_EdgeCut) {
-                int *facepa = emd->facepa;
-                DerivedMesh *splitdm = cutEdges(emd, dm);
-                DerivedMesh *explode = explodeMesh(emd, psmd, md->scene, ob, splitdm);
+			/* 1. find faces to be exploded if needed */
+			if (emd->facepa == NULL ||
+			    psmd->flag & eParticleSystemFlag_Pars ||
+			    emd->flag & eExplodeFlag_CalcFaces ||
+			    MEM_allocN_len(emd->facepa) / sizeof(int) != dm->getNumTessFaces(dm))
+			{
+				if (psmd->flag & eParticleSystemFlag_Pars)
+					psmd->flag &= ~eParticleSystemFlag_Pars;
 
-                MEM_freeN(emd->facepa);
-                emd->facepa = facepa;
-                splitdm->release(splitdm);
-                return explode;
-            }
-            else
-                return explodeMesh(emd, psmd, md->scene, ob, derivedData);
-        }
+				if (emd->flag & eExplodeFlag_CalcFaces)
+					emd->flag &= ~eExplodeFlag_CalcFaces;
+
+				createFacepa(emd, psmd, derivedData);
+			}
+			/* 2. create new mesh */
+			if (emd->flag & eExplodeFlag_EdgeCut) {
+				int *facepa = emd->facepa;
+				DerivedMesh *splitdm = cutEdges(emd, dm);
+				DerivedMesh *explode = explodeMesh(emd, psmd, md->scene, ob, splitdm);
+
+				MEM_freeN(emd->facepa);
+				emd->facepa = facepa;
+				splitdm->release(splitdm);
+				return explode;
+			}
+			else
+				return explodeMesh(emd, psmd, md->scene, ob, derivedData);
+		}
 	}
 	return derivedData;
 }
