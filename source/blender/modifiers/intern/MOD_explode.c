@@ -1423,12 +1423,16 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 		totpoint = get_points(emd, emd->modifier.scene, ob, &points);
 		
 		//no points, cant do anything
-		if (totpoint == 0) return DM_to_bmesh(derivedData);
+		if (totpoint == 0)
+		{
+			MEM_freeN(points);
+			return DM_to_bmesh(derivedData);
+		}
 		
 		if (emd->point_source == eOwnVerts)
 		{
 			//make container a little bigger ?
-			theta = 0.01f;
+			if (!emd->use_boolean) theta = 0.01f;
 		}
 		container = container_new(min[0]-theta, max[0]+theta, min[1]-theta, max[1]+theta, min[2]-theta, max[2]+theta,
 								  n_size, n_size, n_size, FALSE, FALSE, FALSE, totpoint);
@@ -2113,6 +2117,8 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 						{
 							//argh, something went wrong, data will be missing...
 							MEM_freeN(mtface);
+							MEM_freeN(mtps);
+							MEM_freeN(mluvs);
 							mtface = NULL;
 							break;
 						}
