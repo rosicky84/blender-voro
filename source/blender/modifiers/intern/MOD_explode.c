@@ -1332,7 +1332,7 @@ static int get_points(ExplodeModifierData *emd, Scene *scene, Object *ob, float 
 	return totpoint;
 }
 
-static void mergeUVs(ExplodeModifierData* emd)
+static void mergeUVs(ExplodeModifierData* emd, BMesh* bm)
 {
 	DerivedMesh *d = NULL;
 	int i = 0, j = 0, f, f_index = 0, ml_index = 0;
@@ -1444,8 +1444,8 @@ static void mergeUVs(ExplodeModifierData* emd)
 		CustomData_bmesh_init_pool(&emd->fracMesh->ldata, bm_mesh_allocsize_default.totloop, BM_LOOP);
 		CustomData_bmesh_init_pool(&emd->fracMesh->pdata, bm_mesh_allocsize_default.totface, BM_FACE);*/
 		
-		ldata = &emd->fracMesh->ldata;
-		pdata = &emd->fracMesh->pdata;
+		ldata = &bm->ldata;
+		pdata = &bm->pdata;
 		
 		//CustomData_add_layer(&fdata, CD_MTFACE , CD_DUPLICATE, mtface, f_index);
 		CustomData_add_layer(pdata, CD_MTEXPOLY, CD_DUPLICATE, mtps, f_index);
@@ -1739,6 +1739,8 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 					//Intersection, use elements from temporary per-cell bmeshes and write to global bmesh, which
 					//is passed around and whose vertices are manipulated directly.
 					int mat_index = 0;
+					MPoly* mp;
+					
 					dm = CDDM_from_bmesh(bmtemp, TRUE);
 					BM_mesh_free(bmtemp);
 					bmtemp = NULL;
@@ -1788,8 +1790,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						DM_to_mesh(dm, emd->tempOb->data, emd->tempOb);
 						copy_m4_m4(emd->tempOb->obmat, ob->obmat);
 						
-						//CustomData_merge(&derivedData->faceData, &dm->faceData, CD_MASK_DERIVEDMESH & ~(CD_MASK_NORMAL | CD_MASK_ORIGINDEX), CD_DUPLICATE, derivedData->numTessFaceData);
-						
 						boolresult = NewBooleanDerivedMesh(dm, emd->tempOb, derivedData, ob, eBooleanModifierOp_Intersect);
 						
 						//if boolean fails, return original mesh, emit a warning
@@ -1809,7 +1809,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						boolresult = dm;
 					}
 
-
 					//DM_ensure_tessface(boolresult);
 					CDDM_calc_edges_tessface(boolresult);
 					CDDM_tessfaces_to_faces(boolresult);
@@ -1827,24 +1826,15 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 					fa = boolresult->getTessFaceArray(boolresult);
 					
 					
-					CustomData_merge(&boolresult->vertData, &bm->vdata, CD_MASK_BMESH,
-									 CD_CALLOC, boolresult->numVertData);
-					CustomData_merge(&boolresult->edgeData, &bm->edata, CD_MASK_BMESH,
-									 CD_CALLOC, boolresult->numEdgeData);
-					CustomData_merge(&boolresult->loopData, &bm->ldata, CD_MASK_BMESH,
-									 CD_CALLOC, boolresult->numLoopData);
-					CustomData_merge(&boolresult->polyData, &bm->pdata, CD_MASK_BMESH,
-									 CD_CALLOC, boolresult->numPolyData);
+					CustomData_bmesh_merge(&boolresult->vertData, &bm->vdata, CD_MASK_DERIVEDMESH,
+									 CD_CALLOC, bm, BM_VERT);
+					CustomData_bmesh_merge(&boolresult->edgeData, &bm->edata, CD_MASK_DERIVEDMESH,
+									 CD_CALLOC, bm, BM_EDGE);
+					CustomData_bmesh_merge(&boolresult->loopData, &bm->ldata, CD_MASK_DERIVEDMESH,
+									 CD_CALLOC, bm, BM_LOOP);
+					CustomData_bmesh_merge(&boolresult->polyData, &bm->pdata, CD_MASK_DERIVEDMESH,
+									 CD_CALLOC, bm, BM_FACE);
 					
-					/*if (!&bm->vdata.pool)
-						CustomData_bmesh_init_pool(&bm->vdata, bm_mesh_allocsize_default.totvert, BM_VERT);
-					if (!&bm->edata.pool)
-						CustomData_bmesh_init_pool(&bm->edata, bm_mesh_allocsize_default.totedge, BM_EDGE);
-					if (!&bm->ldata.pool)
-						CustomData_bmesh_init_pool(&bm->ldata, bm_mesh_allocsize_default.totloop, BM_LOOP);
-					if (!&bm->pdata.pool)
-						CustomData_bmesh_init_pool(&bm->pdata, bm_mesh_allocsize_default.totface, BM_FACE);*/
-
 					for (v = 0; v < totvert; v++)
 					{
 						boolresult->getVertCo(boolresult, v, co);
@@ -1857,6 +1847,7 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 
 						vert = BM_vert_create(bm, co, NULL, 0);
 						localverts[v] = vert;
+						//vert = BM_vert_at_index(bm, vert_index);
 
 						emd->cells->data[emd->cells->count].vertices[vert_index] = vert;
 
@@ -1871,7 +1862,9 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						
 						
 						CustomData_to_bmesh_block(&boolresult->vertData, &bm->vdata, v, &vert->head.data , 0);
+						
 						vert_index++;
+						
 					}
 
 					for (e = 0; e < totedge; e++)
@@ -1881,10 +1874,13 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						CustomData_to_bmesh_block(&boolresult->edgeData, &bm->edata, e, &edge->head.data , 0);
 					}
 
+					mp = boolresult->getPolyArray(boolresult);
 					for (f = 0; f < totface; f++)
 					{
 						BMLoop* loop;
-						int l_index = 0;
+						BMIter liter;
+						int k = 0;
+						
 						if ((fa[f].v4 > 0) && (fa[f].v4 < totvert))
 						{   //create quad
 							face = BM_face_create_quad_tri(bm, localverts[fa[f].v1], localverts[fa[f].v2], localverts[fa[f].v3], localverts[fa[f].v4], NULL, 0);
@@ -1898,24 +1894,19 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 						}
 						
 						CustomData_to_bmesh_block(&boolresult->polyData, &bm->pdata, f, &face->head.data , 0);
-						/*for (loop = face->l_first; loop; loop = loop->next)
-						{
-							if (loop == face->l_first && l_index > 0) break;
-							CustomData_to_bmesh_block(&boolresult->loopData, &bm->ldata, l_index, &loop->head.data , 0);
-							l_index++;
-						}*/
+						
+						loop = BM_iter_new(&liter, bm, BM_LOOPS_OF_FACE, face);
+						
+						for (k = (mp+f)->loopstart; loop; loop = BM_iter_step(&liter), k++) {
+							CustomData_to_bmesh_block(&boolresult->loopData, &bm->ldata, k, &loop->head.data, 0);
+						}
 					}
-
 
 					MEM_freeN(localverts);
 				}
 
 				edge_index = 0;
 				face_index = 0;
-				// MEM_freeN(faceedges);
-				// MEM_freeN(faceverts);
-				// faceverts = MEM_mallocN(sizeof(BMVert*), "faceverts");
-				// faceedges = MEM_mallocN(sizeof(BMEdge*), "faceverts");
 				break;
 			}
 		}
@@ -1961,11 +1952,6 @@ static BMesh* fractureToCells(Object *ob, DerivedMesh* derivedData, ParticleSyst
 	
 	printf("%d cells missing\n", totpoint - emd->cells->count); //use totpoint here
 	
-	if (emd->use_boolean)
-	{
-		mergeUVs(emd);
-	}
-
 	return bm;
 }
 
