@@ -254,7 +254,8 @@ typedef enum {
 	HISTOGRAM     = (48 << 9),
 	WAVEFORM      = (49 << 9),
 	VECTORSCOPE   = (50 << 9),
-	PROGRESSBAR   = (51 << 9)
+	PROGRESSBAR   = (51 << 9),
+	SEARCH_MENU_UNLINK   = (52 << 9)
 } eButType;
 
 #define BUTTYPE     (63 << 9)
@@ -661,7 +662,6 @@ void uiDrawPanels(const struct bContext *C, struct ARegion *ar);
 struct Panel *uiBeginPanel(struct ScrArea *sa, struct ARegion *ar, uiBlock *block, struct PanelType *pt, int *open);
 void uiEndPanel(uiBlock *block, int width, int height);
 void uiScalePanels(struct ARegion *ar, float new_width);
-void uiPanelClearType(struct wmWindowManager *wm, const struct ARegionType *art, const struct PanelType *type);
 
 /* Handlers
  *

@@ -2095,6 +2095,32 @@ void *CustomData_get_layer_named(const struct CustomData *data, int type,
 	return data->layers[layer_index].data;
 }
 
+int CustomData_get_offset(const CustomData *data, int type)
+{
+	/* get the layer index of the active layer of type */
+	int layer_index = CustomData_get_layer_index(data, type);
+	if (layer_index < 0) return -1;
+
+	return data->layers[layer_index].offset;
+}
+
+int CustomData_get_n_offset(const CustomData *data, int type, int n)
+{
+	/* get the layer index of the active layer of type */
+	int layer_index = CustomData_get_layer_index_n(data, type, n);
+	if (layer_index < 0) return -1;
+
+	return data->layers[layer_index].offset;
+}
+
+int CustomData_get_active_offset(const CustomData *data, int type)
+{
+	/* get the layer index of the active layer of type */
+	int layer_index = CustomData_get_active_layer_index(data, type);
+	if (layer_index < 0) return -1;
+
+	return data->layers[layer_index].offset;
+}
 
 int CustomData_set_layer_name(const CustomData *data, int type, int n, const char *name)
 {

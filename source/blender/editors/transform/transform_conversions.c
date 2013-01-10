@@ -289,6 +289,7 @@ static void createTransEdge(TransInfo *t)
 	float mtx[3][3], smtx[3][3];
 	int count = 0, countsel = 0;
 	int propmode = t->flag & T_PROP_EDIT;
+	int cd_edge_float_offset;
 
 	BM_ITER_MESH (eed, &iter, em->bm, BM_EDGES_OF_MESH) {
 		if (!BM_elem_flag_test(eed, BM_ELEM_HIDDEN)) {
@@ -312,8 +313,22 @@ static void createTransEdge(TransInfo *t)
 	copy_m3_m4(mtx, t->obedit->obmat);
 	pseudoinverse_m3_m3(smtx, mtx, PSEUDOINVERSE_EPSILON);
 
+	/* create data we need */
+	if (t->mode == TFM_BWEIGHT) {
+		BM_mesh_cd_flag_ensure(em->bm, BKE_mesh_from_object(t->obedit), ME_CDFLAG_EDGE_BWEIGHT);
+		cd_edge_float_offset = CustomData_get_offset(&em->bm->edata, CD_BWEIGHT);
+	}
+	else { //if (t->mode == TFM_CREASE) {
+		BLI_assert(t->mode == TFM_CREASE);
+		BM_mesh_cd_flag_ensure(em->bm, BKE_mesh_from_object(t->obedit), ME_CDFLAG_EDGE_CREASE);
+		cd_edge_float_offset = CustomData_get_offset(&em->bm->edata, CD_CREASE);
+	}
+
+	BLI_assert(cd_edge_float_offset != -1);
+
 	BM_ITER_MESH (eed, &iter, em->bm, BM_EDGES_OF_MESH) {
 		if (!BM_elem_flag_test(eed, BM_ELEM_HIDDEN) && (BM_elem_flag_test(eed, BM_ELEM_SELECT) || propmode)) {
+			float *fl_ptr;
 			/* need to set center for center calculations */
 			mid_v3_v3v3(td->center, eed->v1->co, eed->v2->co);
 
@@ -327,17 +342,10 @@ static void createTransEdge(TransInfo *t)
 			copy_m3_m3(td->mtx, mtx);
 
 			td->ext = NULL;
-			if (t->mode == TFM_BWEIGHT) {
-				float *bweight = CustomData_bmesh_get(&em->bm->edata, eed->head.data, CD_BWEIGHT);
-				td->val = bweight;
-				td->ival = bweight ? *bweight : 1.0f;
-			}
-			else {
-				float *crease = CustomData_bmesh_get(&em->bm->edata, eed->head.data, CD_CREASE);
-				BLI_assert(t->mode == TFM_CREASE);
-				td->val = crease;
-				td->ival = crease ? *crease : 0.0f;
-			}
+
+			fl_ptr = BM_ELEM_CD_GET_VOID_P(eed, cd_edge_float_offset);
+			td->val  =  fl_ptr;
+			td->ival = *fl_ptr;
 
 			td++;
 		}
@@ -1907,8 +1915,8 @@ static void VertsToTransData(TransInfo *t, TransData *td, TransDataExtension *tx
 	td->val = NULL;
 	td->extra = NULL;
 	if (t->mode == TFM_BWEIGHT) {
-		td->val = bweight;
-		td->ival = bweight ? *(bweight) : 1.0f;
+		td->val  =  bweight;
+		td->ival = *bweight;
 	}
 	else if (t->mode == TFM_SKIN_RESIZE) {
 		MVertSkin *vs = CustomData_bmesh_get(&em->bm->vdata,
@@ -1944,6 +1952,7 @@ static void createTransEditVerts(TransInfo *t)
 	int mirror = 0;
 	char *selstate = NULL;
 	short selectmode = ts->selectmode;
+	int cd_vert_bweight_offset = -1;
 
 	if (t->flag & T_MIRROR) {
 		EDBM_verts_mirror_cache_begin(em, TRUE);
@@ -2025,6 +2034,10 @@ static void createTransEditVerts(TransInfo *t)
 		}
 	}
 
+	if (t->mode == TFM_BWEIGHT) {
+		BM_mesh_cd_flag_ensure(bm, BKE_mesh_from_object(t->obedit), ME_CDFLAG_VERT_BWEIGHT);
+		cd_vert_bweight_offset = CustomData_get_offset(&bm->vdata, CD_BWEIGHT);
+	}
 
 	if (propmode) {
 		t->total = count;
@@ -2091,11 +2104,10 @@ static void createTransEditVerts(TransInfo *t)
 		}
 	}
 
-	eve = BM_iter_new(&iter, bm, BM_VERTS_OF_MESH, NULL);
-	for (a = 0; eve; eve = BM_iter_step(&iter), a++) {
+	BM_ITER_MESH_INDEX (eve, &iter, bm, BM_VERTS_OF_MESH, a) {
 		if (!BM_elem_flag_test(eve, BM_ELEM_HIDDEN)) {
 			if (propmode || selstate[a]) {
-				float *bweight = CustomData_bmesh_get(&bm->vdata, eve->head.data, CD_BWEIGHT);
+				float *bweight = (cd_vert_bweight_offset != -1) ? BM_ELEM_CD_GET_VOID_P(eve, cd_vert_bweight_offset) : NULL;
 				
 				VertsToTransData(t, tob, tx, em, eve, bweight);
 				if (tx)
